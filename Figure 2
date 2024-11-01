@@ -1,0 +1,115 @@
+source("N:/Veröffentlichungen/ICUD_WST/scripts/load_data.R")
+
+
+data_hist <- function(ufz_data, monitoring_station, sampling_condition) {
+  
+  # Step 1: Select relevant columns based on monitoring_station and sampling_condition
+  header <- colnames(ufz_data)
+  selector <- header[str_detect(header, as.character(monitoring_station)) & str_detect(header, as.character(sampling_condition))]
+  monitoring_data <- ufz_data[, selector]
+  data <- cbind(class = ufz_data$`compound class level 1`, compound = ufz_data$Compound, monitoring_data)
+  
+  # Step 2: Update the column names to formatted dates
+  names_need_edit <- sub(".*_(\\d+)$", "\\1", selector)
+  formatted_vector <- paste0("20", substr(as.character(names_need_edit), 1, 2), "-", 
+                             substr(as.character(names_need_edit), 3, 4), "-", 
+                             substr(as.character(names_need_edit), 5, 6))
+  
+  
+  non_na_counts <- sapply(data, function(x) sum(!is.na(x)))
+  non_na_counts=non_na_counts[-c(1,2)]
+  
+  formatted_vector_nums <- paste(formatted_vector, "  (n=", non_na_counts, ")", sep="")
+  
+  colnames(data)[-(1:2)] <- formatted_vector_nums
+  
+  # Step 3: Pivot longer to tidy the data
+  data_long <- data %>%
+    pivot_longer(cols = starts_with("2022"), names_to = "date", values_to = "value")
+  
+  # Remove NA values
+  data_long <- na.omit(data_long)
+  
+  custom_breaks <- c(1, 3, 5, 10, 30, 50, 100, 300, 500, 1000, 5000)
+  
+  # Step 4: Calculate the histogram to get the max count
+  hist_data <- ggplot(data_long, aes(x = value)) +
+    geom_histogram(bins = 30) +
+    scale_x_log10()
+  
+  # Extract histogram data
+  hist_layer_data <- ggplot_build(hist_data)$data[[1]]
+  
+  # Find the maximum count
+  max_count <- max(hist_layer_data$count)
+  
+  # Set the color palette based on the sampling condition
+  if (sampling_condition == "BL") {
+    if (ncol(data) == 7) {
+      color_palette <- brewer.pal(ncol(data) - 2, "Set2")  # ncol(data) - 2 to exclude class and compound columns
+    } else {
+      color_palette <- c("#66C2A5", "#FC8D62", "#E78AC3")
+    }
+  } else {
+    color_palette <- brewer.pal(ncol(data) - 2, "Set3")
+  }
+  
+  # Step 5: Plot the histogram with fills and a density line for each date
+  ggplot(data_long, aes(x = value)) +
+    geom_histogram(aes(y = ..count.., fill = date), 
+                   position = "dodge", bins = 30, show.legend = FALSE, 
+                   width = 0.6, alpha = 0.7) +  # Adjusted width and alpha for space and transparency
+    geom_density(aes(y = ..density.. * max_count, color = date), 
+                 size = 1, fill = NA) +  # Separate density lines for each date
+    scale_x_log10(breaks = custom_breaks) +
+    
+    # Set limits for the left y-axis (automatic) and no limit for the right (density)
+    scale_y_continuous(name = "Number of compounds\n", 
+                       sec.axis = sec_axis(~ . / max_count, name = "Density\n", 
+                                           breaks = seq(0, 1, by = 0.1))) +  # Set breaks for the right y-axis
+    
+    # Conditional labeling based on sampling condition
+    {if (sampling_condition == "BL") {
+      
+      labs(color = "Endpoint of sampling:",
+           x = "\nconcentration in ng/l (log scaled)",
+           title = monitoring_station)
+    } else {
+      labs(color = "Date of event:",
+           x = "\nconcentration in ng/l (log scaled)",
+           title = monitoring_station)
+    }} +
+    theme_minimal() +
+    theme(legend.position = c(.8, 0.5)) +
+    scale_fill_manual(values = color_palette) +  # Apply the color palette to the fill
+    scale_color_manual(values = color_palette)  # Apply the color palette to the density lines
+}
+
+
+test_1=data_hist(ufz_data,monitoring_station = "Lock1",sampling_condition = "BL")
+test_2=data_hist(ufz_data,monitoring_station = "Lock2",sampling_condition = "BL")
+test_3=data_hist(ufz_data,monitoring_station = "Lock3",sampling_condition = "BL")
+test_4=data_hist(ufz_data,monitoring_station = "Geb1",sampling_condition = "BL")
+
+
+a=list(test_1,test_2,test_3,test_4)
+
+a[[1]]<- a[[1]] + theme(axis.title.x = element_blank())
+a[[2]]<- a[[2]] + theme(axis.title.x = element_blank())
+a[[4]]<- a[[4]] + theme()
+
+b=wrap_plots(a,ncol = 2)
+
+setwd("N:/Veröffentlichungen/ICUD_WST/pictures/baseline/overview")
+
+ggsave(filename=paste0("concentrations_compounds",".png"),bg = 'white',
+       plot = (b),
+       width=34,
+       height=18,
+       units="cm")
+
+
+
+
+
+

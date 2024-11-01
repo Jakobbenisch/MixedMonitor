@@ -1,0 +1,313 @@
+source("N:/Veröffentlichungen/ICUD_WST/scripts/load_data.R")
+
+ufz_overviewplot=function(Q,events,title,event){
+  df=rbind(data.frame(index(Q),coredata(Q)))
+  eventsms6_plot=cbind(Q,events)[,2]
+  df2=data.frame(index(eventsms6_plot),coredata(eventsms6_plot))
+  colnames(df)=c("time","Discharge")
+  colnames(df2)=c("time","Discharge")
+  
+  
+  p1 = ggplot() +
+    geom_line(data=df, aes(x=time, y=Discharge), color="grey20", linewidth=0.1) +
+    theme_minimal(base_size=5) +
+    ylab("Discharge [m³/s]\n") +
+    ggtitle(title) +
+    theme(axis.title.x = element_blank(),
+          axis.ticks.y.left = element_line(color="black"),
+          axis.ticks.x = element_line(color="black"),
+          legend.position = "none")
+  
+  # Conditionally add the event layer if event is TRUE
+  if (event == TRUE) {
+    p1 = p1 + geom_line(data=df2, aes(x=time, y=Discharge), color="orangered", linewidth=0.3)
+  }
+  
+  
+  print(p1)}
+
+Q_event=list(
+  Kreischa=Add.NA(Q_Kreischa["2022-04-17/2022-08"],by = 15*60),
+  MS6=Add.NA(Q_MS6["2022-04-17/2022-08"],by = 5*60),
+  MS4=Add.NA(Q_MS4["2022-04-17/2022-08"],by = 5*60),
+  Kauscha=Add.NA(kauscha_Q["2022-04-17/2022-08"],by = 15*60),
+  MS7=FillNaValues(Add.NA(Q_MS7["2022-04-17/2022-08"],by = 5*60),use = "linear",maxgap = 100),
+  MS8=FillNaValues(Add.NA(Q_MS8["2022-04-17/2022-08"],by = 5*60),use = "linear",maxgap = 100))
+
+event_list=list(event_K_1,
+                do.call("rbind",MS6),
+                do.call("rbind",MS4),
+                0,
+                FillNaValues(Add.NA(do.call("rbind",MS7),by = 5*60),use = "linear",maxgap = 100),
+                FillNaValues(Add.NA(do.call("rbind",MS8),by = 5*60),use = "linear",maxgap = 100))
+event=c(T,T,T,F,T,T)
+
+titles=c("Lock2","Lock3","Lock4","Geb1","Geb2","Geb3")
+
+
+plots=list()
+for(stations in 1:6){
+  plots[[stations]]=ufz_overviewplot(Q_event[[stations]],events=event_list[[stations]],title=titles[stations],event=event[stations])
+}
+b=wrap_plots(plots) + plot_layout(guides = "collect",ncol=2) 
+
+b=(plots[[1]]/plots[[2]]/plots[[3]])|(plots[[4]]/plots[[5]]/plots[[6]])
+
+setwd("N:/Veröffentlichungen/ICUD_WST/pictures/events/discharges")
+
+ggsave(filename="overview_events.png",bg = 'white',
+       plot = (b),
+       width=10,
+       height=8,
+       units="cm")
+
+
+####baseline Qs
+
+Q_mean_sampling_Lock2=mean(test["2022-05/2022-08"])
+Q_mean_sampling_Lock3=mean(Q_MS6["2022-05/2022-08"])
+Q_mean_sampling_Geb1=mean(kauscha_Q["2022-05/2022-08"])
+
+calculate_mean_may_to_aug <- function(xts_data, start_year, end_year) {
+  # Create a sequence of years based on the start and end year
+  years <- seq(start_year, end_year)
+  
+  # Calculate the mean for May to August for each year
+  mean_over_period <- mean(sapply(years, function(year) {
+    # Subset the data for May to August for the specific year
+    period_data <- xts_data[paste0(year, "-05/", year, "-08")]
+    # Calculate the mean for that period, removing NA values if they exist
+    mean(period_data, na.rm = TRUE)
+  }))
+  
+  return(mean_over_period)
+}
+
+Q_mean_total_Lock2=calculate_mean_may_to_aug(test,2017,2021)
+Q_mean_total_Lock3=calculate_mean_may_to_aug(Q_MS6,2017,2021)
+Q_mean_total_Geb1=calculate_mean_may_to_aug(kauscha_Q,2017,2021)
+
+Q_mean_sampling_Lock2/Q_mean_total_Lock2
+Q_mean_sampling_Lock3/Q_mean_total_Lock3
+Q_mean_sampling_Geb1/Q_mean_total_Geb1
+
+
+###mean Qs:
+
+
+Kreischa_Q_1_mean=mean(CutTimeSeries(Q_Kreischa,"2022-04-13","2022-05-12"),na.rm=T)
+Kreischa_Q_2_mean=mean(CutTimeSeries(Q_Kreischa,"2022-05-12","2022-06-08"),na.rm=T)
+Kreischa_Q_3_mean=mean(CutTimeSeries(Q_Kreischa,"2022-06-08","2022-07-06"),na.rm=T)
+Kreischa_Q_4_mean=mean(CutTimeSeries(Q_Kreischa,"2022-07-06","2022-08-01"),na.rm=T)
+Kreischa_Q_5_mean=mean(CutTimeSeries(Q_Kreischa,"2022-08-01","2022-08-31"),na.rm=T)
+
+Q_MS6_1_mean=mean(CutTimeSeries(Q_MS6,"2022-04-13","2022-05-12"),na.rm=T)
+Q_MS6_2_mean=mean(CutTimeSeries(Q_MS6,"2022-05-12","2022-06-08"),na.rm=T)
+Q_MS6_3_mean=mean(CutTimeSeries(Q_MS6,"2022-06-08","2022-07-06"),na.rm=T)
+Q_MS6_4_mean=mean(CutTimeSeries(Q_MS6,"2022-07-06","2022-08-01"),na.rm=T)
+Q_MS6_5_mean=mean(CutTimeSeries(Q_MS6,"2022-08-01","2022-08-31"),na.rm=T)
+
+kauscha_Q_1_mean=mean(CutTimeSeries(kauscha_Q,"2022-04-13","2022-05-12"),na.rm=T)
+kauscha_Q_2_mean=mean(CutTimeSeries(kauscha_Q,"2022-05-12","2022-06-08"),na.rm=T)
+kauscha_Q_3_mean=mean(CutTimeSeries(kauscha_Q,"2022-06-08","2022-07-06"),na.rm=T)
+kauscha_Q_4_mean=mean(CutTimeSeries(kauscha_Q,"2022-07-06","2022-08-01"),na.rm=T)
+kauscha_Q_5_mean=mean(CutTimeSeries(kauscha_Q,"2022-08-01","2022-08-31"),na.rm=T)
+
+Q_MS4_1_mean=mean(CutTimeSeries(Q_MS4,"2022-04-13","2022-05-12"),na.rm=T)
+Q_MS4_2_mean=mean(CutTimeSeries(Q_MS4,"2022-05-12","2022-06-08"),na.rm=T)
+Q_MS4_3_mean=mean(CutTimeSeries(Q_MS4,"2022-06-08","2022-07-06"),na.rm=T)
+Q_MS4_4_mean=mean(CutTimeSeries(Q_MS4,"2022-07-06","2022-08-01"),na.rm=T)
+Q_MS4_5_mean=mean(CutTimeSeries(Q_MS4,"2022-08-01","2022-08-31"),na.rm=T)
+
+Q_MS7_1_mean=mean(CutTimeSeries(Q_MS7,"2022-04-13","2022-05-12"),na.rm=T)
+Q_MS7_2_mean=mean(CutTimeSeries(Q_MS7,"2022-05-12","2022-06-08"),na.rm=T)
+Q_MS7_3_mean=mean(CutTimeSeries(Q_MS7,"2022-06-08","2022-07-06"),na.rm=T)
+Q_MS7_4_mean=mean(CutTimeSeries(Q_MS7,"2022-07-06","2022-08-01"),na.rm=T)
+Q_MS7_5_mean=mean(CutTimeSeries(Q_MS7,"2022-08-01","2022-08-31"),na.rm=T)
+
+Q_MS8_1_mean=mean(CutTimeSeries(Q_MS8,"2022-04-13","2022-05-12"),na.rm=T)
+Q_MS8_2_mean=mean(CutTimeSeries(Q_MS8,"2022-05-12","2022-06-08"),na.rm=T)
+Q_MS8_3_mean=mean(CutTimeSeries(Q_MS8,"2022-06-08","2022-07-06"),na.rm=T)
+Q_MS8_4_mean=mean(CutTimeSeries(Q_MS8,"2022-07-06","2022-08-01"),na.rm=T)
+Q_MS8_5_mean=mean(CutTimeSeries(Q_MS8,"2022-08-01","2022-08-31"),na.rm=T)
+
+
+mean_Qs=rbind(c(Kreischa_Q_1_mean,Kreischa_Q_2_mean,Kreischa_Q_3_mean,Kreischa_Q_4_mean,Kreischa_Q_5_mean),
+              c(Q_MS6_1_mean,Q_MS6_2_mean,Q_MS6_3_mean,Q_MS6_4_mean,Q_MS6_5_mean),
+              c(Q_MS4_1_mean,Q_MS4_2_mean,Q_MS4_3_mean,Q_MS4_4_mean,Q_MS4_5_mean),
+              c(kauscha_Q_1_mean,kauscha_Q_2_mean,kauscha_Q_3_mean,kauscha_Q_4_mean,kauscha_Q_5_mean),
+              c(Q_MS7_1_mean,Q_MS7_2_mean,Q_MS7_3_mean,Q_MS7_4_mean,Q_MS7_5_mean),
+              c(Q_MS8_1_mean,Q_MS8_2_mean,Q_MS8_3_mean,Q_MS8_4_mean,Q_MS8_5_mean))
+
+colnames(mean_Qs)=c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-31")
+rownames(mean_Qs)=c("Lock2","Lock3","Lock4","Geb1","Geb2","Geb3")
+
+
+write.csv(mean_Qs,file = "N:/Veröffentlichungen/ICUD_WST/pictures/baseline/overview/meanQ.csv")
+
+
+Kreischa_Q_1=CutTimeSeries(Q_Kreischa,"2022-04-13","2022-05-12")
+Kreischa_Q_2=CutTimeSeries(Q_Kreischa,"2022-05-12","2022-06-08")
+Kreischa_Q_3=CutTimeSeries(Q_Kreischa,"2022-06-08","2022-07-06")
+Kreischa_Q_4=CutTimeSeries(Q_Kreischa,"2022-07-06","2022-08-01")
+Kreischa_Q_5=CutTimeSeries(Q_Kreischa,"2022-08-01","2022-08-31")
+
+Q_MS6_1=CutTimeSeries(Q_MS6,"2022-04-13","2022-05-12")
+Q_MS6_2=CutTimeSeries(Q_MS6,"2022-05-12","2022-06-08")
+Q_MS6_3=CutTimeSeries(Q_MS6,"2022-06-08","2022-07-06")
+Q_MS6_4=CutTimeSeries(Q_MS6,"2022-07-06","2022-08-01")
+Q_MS6_5=CutTimeSeries(Q_MS6,"2022-08-01","2022-08-31")
+
+kauscha_Q_1=CutTimeSeries(kauscha_Q,"2022-04-13","2022-05-12")
+kauscha_Q_2=CutTimeSeries(kauscha_Q,"2022-05-12","2022-06-08")
+kauscha_Q_3=CutTimeSeries(kauscha_Q,"2022-06-08","2022-07-06")
+kauscha_Q_4=CutTimeSeries(kauscha_Q,"2022-07-06","2022-08-01")
+kauscha_Q_5=CutTimeSeries(kauscha_Q,"2022-08-01","2022-08-31")
+
+MS4_Q_1=CutTimeSeries(Q_MS4,"2022-04-13","2022-05-12")
+MS4_Q_2=CutTimeSeries(Q_MS4,"2022-05-12","2022-06-08")
+MS4_Q_3=CutTimeSeries(Q_MS4,"2022-06-08","2022-07-06")
+MS4_Q_4=CutTimeSeries(Q_MS4,"2022-07-06","2022-08-01")
+MS4_Q_5=CutTimeSeries(Q_MS4,"2022-08-01","2022-08-31")
+
+MS7_Q_1=CutTimeSeries(Q_MS7,"2022-04-13","2022-05-12")
+MS7_Q_2=CutTimeSeries(Q_MS7,"2022-05-12","2022-06-08")
+MS7_Q_3=CutTimeSeries(Q_MS7,"2022-06-08","2022-07-06")
+MS7_Q_4=CutTimeSeries(Q_MS7,"2022-07-06","2022-08-01")
+MS7_Q_5=CutTimeSeries(Q_MS7,"2022-08-01","2022-08-31")
+
+MS8_Q_1=CutTimeSeries(Q_MS8,"2022-04-13","2022-05-12")
+MS8_Q_2=CutTimeSeries(Q_MS8,"2022-05-12","2022-06-08")
+MS8_Q_3=CutTimeSeries(Q_MS8,"2022-06-08","2022-07-06")
+MS8_Q_4=CutTimeSeries(Q_MS8,"2022-07-06","2022-08-01")
+MS8_Q_5=CutTimeSeries(Q_MS8,"2022-08-01","2022-08-31")
+
+####Baseflow
+
+Kreischa_Q_1_BL=CutTimeSeriesDel(Kreischa_Q_1,"2022-04-24 15:15:00","2022-05-02")
+Kreischa_Q_2_BL=CutTimeSeriesDel(Kreischa_Q_2,"2022-05-16 21:15:00","2022-05-19")
+Kreischa_Q_3_BL=CutTimeSeriesDel(Kreischa_Q_3,"2022-06-28 01:30:00","2022-06-28 19:15:00")
+Kreischa_Q_4_BL=Kreischa_Q_4
+Kreischa_Q_5_BL=CutTimeSeriesDel(Kreischa_Q_5,"2022-08-20 04:00:00","2022-08-31")
+
+Q_MS6_1_BL=CutTimeSeriesDel(Q_MS6_1,"2022-04-24 14:00:00","2022-05-02")
+Q_MS6_2_BL=CutTimeSeriesDel(Q_MS6_2,"2022-05-16 22:00:00","2022-05-19")
+Q_MS6_3_BL=CutTimeSeriesDel(Q_MS6_3,"2022-06-28 00:45:00","2022-07-01 06:00:00")
+Q_MS6_4_BL=Q_MS6_4
+Q_MS6_5_BL=CutTimeSeriesDel(Q_MS6_5,"2022-08-20 04:05:00","2022-08-24")
+Q_MS6_5_BL=CutTimeSeriesDel(Q_MS6_5,"2022-08-27 06:00:00","2022-08-31")
+
+
+kauscha_Q_1_BL=CutTimeSeriesDel(kauscha_Q_1,"2022-04-24 17:00:00","2022-04-28")
+kauscha_Q_2_BL=CutTimeSeriesDel(kauscha_Q_2,"2022-05-16 22:00:00","2022-05-19")
+kauscha_Q_3_BL=kauscha_Q_3
+kauscha_Q_4_BL=kauscha_Q_4
+kauscha_Q_5_BL=CutTimeSeriesDel(kauscha_Q_5,"2022-08-28 16:30:00","2022-08-29")
+
+MS4_Q_1_BL=CutTimeSeriesDel(MS4_Q_1,"2022-04-13 14:00:00","2022-04-28 10:00:00")
+MS4_Q_2_BL=CutTimeSeriesDel(MS4_Q_2,"2022-05-16 16:00:00","2022-05-18 11:00:00")
+MS4_Q_2_BL=CutTimeSeriesDel(MS4_Q_2_BL,"2022-06-04 03:00:00","2022-06-04 11:00:00")
+MS4_Q_3_BL=CutTimeSeriesDel(MS4_Q_3,"2022-06-28 02:00:00","2022-06-29 14:00:00")
+MS4_Q_4_BL=CutTimeSeriesDel(MS4_Q_4,"2022-07-10 00:00:00","2022-07-10 07:00:00")
+MS4_Q_5_BL=CutTimeSeriesDel(MS4_Q_5,"2022-08-20 05:00:00","2022-08-24")
+MS4_Q_5_BL=CutTimeSeriesDel(MS4_Q_5_BL,"2022-08-27 09:00:00","2022-08-31")
+
+
+MS7_Q_1_BL=CutTimeSeries(MS7_Q_1,"2022-04-13","2022-05-12")
+MS7_Q_2_BL=CutTimeSeriesDel(MS7_Q_2,"2022-05-16 16:00:00","2022-05-17 10:00:00")
+MS7_Q_2_BL=CutTimeSeriesDel(MS7_Q_2_BL,"2022-05-27 05:00:00","2022-05-28 01:00:00")
+MS7_Q_2_BL=CutTimeSeriesDel(MS7_Q_2_BL,"2022-05-29 16:00:00","2022-05-31 02:00:00")
+MS7_Q_2_BL=CutTimeSeriesDel(MS7_Q_2_BL,"2022-06-03 20:00:00","2022-06-04 19:00:00")
+MS7_Q_3_BL=CutTimeSeriesDel(MS7_Q_3,"2022-06-13 18:00:00","2022-06-14 00:00:00")
+MS7_Q_3_BL=CutTimeSeriesDel(MS7_Q_3_BL,"2022-06-24 16:00:00","2022-06-24 20:00:00")
+MS7_Q_3_BL=CutTimeSeriesDel(MS7_Q_3_BL,"2022-06-27 12:00:00","2022-06-28 13:00:00")
+MS7_Q_3_BL=CutTimeSeriesDel(MS7_Q_3_BL,"2022-06-30 15:00:00","2022-06-30 20:00:00")
+MS7_Q_3_BL=CutTimeSeriesDel(MS7_Q_3_BL,"2022-06-29 17:00:00","2022-06-29 20:00:00")
+MS7_Q_3_BL=CutTimeSeriesDel(MS7_Q_3_BL,"2022-07-01 13:00:00","2022-07-01 20:00:00")
+MS7_Q_4_BL=CutTimeSeriesDel(MS7_Q_4,start(MS7_Q_4),"2022-07-06 13:50:00")
+MS7_Q_4_BL=CutTimeSeriesDel(MS7_Q_4_BL,"2022-07-09 21:00:00","2022-07-10 12:00:00")
+MS7_Q_4_BL=CutTimeSeriesDel(MS7_Q_4_BL,"2022-07-21 18:00:00","2022-07-22 00:00:00")
+MS7_Q_5_BL=CutTimeSeriesDel(MS7_Q_5,"2022-08-20 07:00:00","2022-08-20 20:00:00")
+MS7_Q_5_BL=CutTimeSeriesDel(MS7_Q_5_BL,"2022-08-21 01:00:00","2022-08-21 09:00:00")
+MS7_Q_5_BL=CutTimeSeriesDel(MS7_Q_5_BL,"2022-08-22 15:00:00","2022-08-23 23:00:00")
+MS7_Q_5_BL=CutTimeSeriesDel(MS7_Q_5_BL,"2022-08-26 18:00:00","2022-08-26 23:00:00")
+MS7_Q_5_BL=CutTimeSeriesDel(MS7_Q_5_BL,"2022-08-27 06:00:00","2022-08-28 11:00:00")
+
+MS8_Q_1_BL=CutTimeSeriesDel(MS8_Q_1,"2022-04-14 21:00:00","2022-04-15 06:00:00")
+MS8_Q_1_BL=CutTimeSeriesDel(MS8_Q_1_BL,"2022-04-24 16:00:00","2022-04-25 13:00:00")
+MS8_Q_2_BL=CutTimeSeriesDel(MS8_Q_2,"2022-05-16 22:00:00","2022-05-18 00:00:00")
+MS8_Q_2_BL=CutTimeSeriesDel(MS8_Q_2_BL,"2022-05-20 18:00:00","2022-05-21 03:00:00")
+MS8_Q_2_BL=CutTimeSeriesDel(MS8_Q_2_BL,"2022-05-27 09:00:00","2022-05-27 21:00:00")
+MS8_Q_2_BL=CutTimeSeriesDel(MS8_Q_2_BL,"2022-05-30 04:00:00","2022-05-30 14:00:00")
+MS8_Q_2_BL=CutTimeSeriesDel(MS8_Q_2_BL,"2022-06-04 03:00:00","2022-06-04 14:00:00")
+MS8_Q_2_BL=CutTimeSeriesDel(MS8_Q_2_BL,"2022-06-06 05:00:00","2022-06-06 14:00:00")
+MS8_Q_3_BL=CutTimeSeriesDel(MS8_Q_3,"2022-06-13 19:00:00","2022-06-14 02:00:00")
+MS8_Q_3_BL=CutTimeSeriesDel(MS8_Q_3_BL,"2022-06-24 19:00:00","2022-06-24 23:00:00")
+MS8_Q_3_BL=CutTimeSeriesDel(MS8_Q_3_BL,"2022-06-28 02:00:00","2022-06-28 21:00:00")
+MS8_Q_3_BL=CutTimeSeriesDel(MS8_Q_3_BL,"2022-07-01 14:00:00","2022-07-02 00:00:00")
+MS8_Q_4_BL=CutTimeSeriesDel(MS8_Q_4,start(MS8_Q_4),"2022-07-06 11:00:00")
+MS8_Q_4_BL=CutTimeSeriesDel(MS8_Q_4_BL,"2022-07-10 00:00:00","2022-07-10 12:00:00")
+MS8_Q_5_BL=CutTimeSeriesDel(MS8_Q_5,"2022-08-06 03:00:00","2022-08-06 11:00:00")
+MS8_Q_5_BL=CutTimeSeriesDel(MS8_Q_5_BL,"2022-08-20 07:00:00","2022-08-21 22:00:00")
+MS8_Q_5_BL=CutTimeSeriesDel(MS8_Q_5_BL,"2022-08-23 00:00:00","2022-08-23 13:00:00")
+MS8_Q_5_BL=CutTimeSeriesDel(MS8_Q_5_BL,"2022-08-26 20:00:00","2022-08-27 00:00:00")
+MS8_Q_5_BL=CutTimeSeriesDel(MS8_Q_5_BL,"2022-08-27 08:00:00","2022-08-27 20:00:00")
+MS8_Q_5_BL=CutTimeSeriesDel(MS8_Q_5_BL,"2022-08-27 22:00:00","2022-08-28 12:00:00")
+
+
+####BFI
+
+MS6_Q_list=list(Q_MS6_1,Q_MS6_2,Q_MS6_3,Q_MS6_4,Q_MS6_5)
+Kreischa_Q_list=list(Kreischa_Q_1,Kreischa_Q_2,Kreischa_Q_3,Kreischa_Q_4,Kreischa_Q_5)
+Kauscha_Q_list=list(kauscha_Q_1,kauscha_Q_2,kauscha_Q_3,kauscha_Q_4,kauscha_Q_5)
+MS4_Q_list=list(MS4_Q_1,MS4_Q_2,MS4_Q_3,MS4_Q_4,MS4_Q_5)
+MS7_Q_list=list(MS7_Q_1,MS7_Q_2,MS7_Q_3,MS7_Q_4,MS7_Q_5)
+MS8_Q_list=list(MS8_Q_1,MS8_Q_2,MS8_Q_3,MS8_Q_4,MS8_Q_5)
+
+MS6_Q_list_BL=list(Q_MS6_1_BL,Q_MS6_2_BL,Q_MS6_3_BL,Q_MS6_4_BL,Q_MS6_5_BL)
+Kreischa_Q_list_BL=list(Kreischa_Q_1_BL,Kreischa_Q_2_BL,Kreischa_Q_3_BL,Kreischa_Q_4_BL,Kreischa_Q_5_BL)
+Kauscha_Q_list_BL=list(kauscha_Q_1_BL,kauscha_Q_2_BL,kauscha_Q_3_BL,kauscha_Q_4_BL,kauscha_Q_5_BL)
+MS4_Q_list_BL=list(MS4_Q_1_BL,MS4_Q_2_BL,MS4_Q_3_BL,MS4_Q_4_BL,MS4_Q_5_BL)
+MS7_Q_list_BL=list(MS7_Q_1_BL,MS7_Q_2_BL,MS7_Q_3_BL,MS7_Q_4_BL,MS7_Q_5_BL)
+MS8_Q_list_BL=list(MS8_Q_1_BL,MS8_Q_2_BL,MS8_Q_3_BL,MS8_Q_4_BL,MS8_Q_5_BL)
+
+BFI_MS6=list()
+BFI_Kreischa=list()
+BFI_Kauscha=list()
+BFI_MS4=list()
+BFI_MS7=list()
+BFI_MS8=list()
+
+
+for(i in 1:5){
+  BFI_MS6[[i]]= sum(FillNaValues(Add.NA(MS6_Q_list_BL[[i]],by = 1),use = "linear",maxgap = 60*6),na.rm = T)/sum(FillNaValues(Add.NA(MS6_Q_list[[i]],by = 1),use = "linear",maxgap = Inf))
+  BFI_Kreischa[[i]]= sum(FillNaValues(Add.NA(Kreischa_Q_list_BL[[i]],by = 1),use = "linear",maxgap = 60*20),na.rm = T)/sum(FillNaValues(Add.NA(Kreischa_Q_list[[i]],by = 1),use = "linear",maxgap = Inf))
+  BFI_Kauscha[[i]]= sum(FillNaValues(Add.NA(Kauscha_Q_list_BL[[i]],by = 1),use = "linear",maxgap = 60*20),na.rm = T)/sum(FillNaValues(Add.NA(Kauscha_Q_list[[i]],by = 1),use = "linear",maxgap = Inf))
+  BFI_MS4[[i]]= sum(FillNaValues(Add.NA(MS4_Q_list_BL[[i]],by = 1),use = "linear",maxgap = 60*6),na.rm = T)/sum(FillNaValues(Add.NA(MS4_Q_list[[i]],by = 1),use = "linear",maxgap = Inf))
+  BFI_MS7[[i]]= sum(FillNaValues(Add.NA(MS7_Q_list_BL[[i]],by = 1),use = "linear",maxgap = 60*20),na.rm = T)/sum(FillNaValues(Add.NA(MS7_Q_list[[i]],by = 1),use = "linear",maxgap = Inf))
+  BFI_MS8[[i]]= sum(FillNaValues(Add.NA(MS8_Q_list_BL[[i]],by = 1),use = "linear",maxgap = 60*20),na.rm = T)/sum(FillNaValues(Add.NA(MS8_Q_list[[i]],by = 1),use = "linear",maxgap = Inf))
+}
+  
+summary=rbind(do.call("cbind",BFI_Kreischa),do.call("cbind",BFI_MS6),do.call("cbind",BFI_MS4),do.call("cbind",BFI_Kauscha),do.call("cbind",BFI_MS7),do.call("cbind",BFI_MS8))
+colnames(summary)=c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-31")
+rownames(mean_Qs)=c("Lock2","Lock3","Lock4","Geb1","Geb2","Geb3")
+
+
+write.csv(summary,file = "N:/Veröffentlichungen/ICUD_WST/pictures/baseline/overview/BFI.csv")
+
+
+#BFI_total
+
+BFI_MS6_total= sum(FillNaValues(Add.NA(do.call(rbind,MS6_Q_list_BL),by = 1),use = "linear",maxgap = 60*6),na.rm = T)/sum(FillNaValues(Add.NA(do.call(rbind,MS6_Q_list),by = 1),use = "linear",maxgap = Inf))
+BFI_Kreischa_total= sum(FillNaValues(Add.NA(do.call(rbind,Kreischa_Q_list_BL),by = 1),use = "linear",maxgap = 60*20),na.rm = T)/sum(FillNaValues(Add.NA(do.call(rbind,Kreischa_Q_list),by = 1),use = "linear",maxgap = Inf))
+BFI_Kauscha_total= sum(FillNaValues(Add.NA(do.call(rbind,Kauscha_Q_list_BL),by = 1),use = "linear",maxgap = 60*20),na.rm = T)/sum(FillNaValues(Add.NA(do.call(rbind,Kauscha_Q_list),by = 1),use = "linear",maxgap = Inf))
+BFI_MS4_total= sum(FillNaValues(Add.NA(do.call(rbind,MS4_Q_list_BL),by = 1),use = "linear",maxgap = 60*6),na.rm = T)/sum(FillNaValues(Add.NA(do.call(rbind,MS4_Q_list),by = 1),use = "linear",maxgap = Inf))
+BFI_MS7_total= sum(FillNaValues(Add.NA(do.call(rbind,MS7_Q_list_BL),by = 1),use = "linear",maxgap = 60*20),na.rm = T)/sum(FillNaValues(Add.NA(do.call(rbind,MS7_Q_list),by = 1),use = "linear",maxgap = Inf))
+BFI_MS8_total= sum(FillNaValues(Add.NA(do.call(rbind,MS8_Q_list_BL),by = 1),use = "linear",maxgap = 60*20),na.rm = T)/sum(FillNaValues(Add.NA(do.call(rbind,MS8_Q_list),by = 1),use = "linear",maxgap = Inf))
+
+
+Q_ms4_total=sum(FillNaValues(Add.NA(CutTimeSeries(Q_MS4,"2022-04-13","2022-08-31"),by = 1),use = "linear",maxgap = Inf))
+Q_ms4_total_BL=sum(FillNaValues(Add.NA(do.call(rbind,MS4_Q_list_BL),by = 1),use = "linear",maxgap = 6*60),na.rm = T)
+
+(Q_ms4_total-Q_ms4_total_BL)/Q_ms4_total #->38% V von events
+

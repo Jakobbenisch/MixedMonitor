@@ -1,0 +1,206 @@
+source("N:/Veröffentlichungen/ICUD_WST/scripts/load_data.R")
+
+
+prepare_data=function(ufz_data,monitoring_station,sampling_condition,colname){
+  header=colnames(ufz_data)
+  selector=header[str_detect(header,as.character(monitoring_station))&str_detect(header,as.character(sampling_condition))]
+  monitoring_data=ufz_data[,selector]
+  monitoring_data=cbind(monitoring_data,class=ufz_data$`compound class level 1`,compound=ufz_data$Compound)
+  monitoring_data_final <- monitoring_data %>%
+    filter(class != 0)
+  names(monitoring_data_final)<-colname
+  return(monitoring_data_final)
+}
+
+
+plot_single_station_concentration_bl <- function(ufz_data, monitoring_station, colname, title = NA) {
+  ufz_data <- ufz_data[!is.na(ufz_data$`compound class level 1`), ]
+  data_temp <- prepare_data(ufz_data, monitoring_station, "BL", colname)
+  
+  plot <- melt(data_temp, id.vars = c("class", "compound"))
+  
+  summarized_data <- plot %>%
+    group_by(class, variable) %>%
+    summarize(value = sum(value, na.rm = TRUE)) %>%
+    ungroup()
+  
+  wide_df <- pivot_wider(summarized_data, names_from = variable, values_from = value)
+  
+  p1 <- ggplot(data = summarized_data, aes(x = value, y = reorder(class, value), fill = forcats::fct_rev(variable))) +
+    geom_bar(stat = "identity", position = position_dodge(.8), color = "black", size = .1, width = .8) +
+    scale_fill_manual(values = if (ncol(data_temp) == 7) {
+      brewer.pal(ncol(data_temp) - 2, "Set2")
+    } else {
+      c("#FC8D62", "#E78AC3", "#A6D854")
+    }) +
+    theme_light() +
+    xlab("concentration in ng/l")
+  
+  if (!is.na(title)) {
+    p1 <- p1 + ggtitle(title) +
+      theme(
+        legend.position = "none",
+        axis.text = element_text(size = 7),
+        axis.title = element_text(size = 7),
+        axis.title.y = element_blank()
+      )
+  } else {
+    p1 <- p1 + ylab("") +
+      labs(fill = "Endpoint of sampling:") +
+      theme(
+        legend.position = c(0.5, 0.086),
+        legend.direction = "horizontal",
+        legend.text = element_text(size = 6),
+        legend.title = element_text(size = 6),
+        axis.text = element_text(size = 7),
+        axis.title = element_text(size = 7),
+        legend.key.size = unit(.5, "cm")
+      ) +
+      guides(fill = guide_legend(reverse = TRUE))
+  }
+  
+  print(p1)
+  return(list(p1,wide_df))
+}
+    
+
+event_names_lock3<-c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-30","class","compound")
+event_names_lock2<-c("2022-05-12","2022-06-08","2022-08-01","class","compound")
+event_names_lock1<-c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-30","class","compound")
+
+
+
+ms6=plot_single_station_concentration_bl(ufz_data,"Lock3",colname = event_names_lock3)
+kreischa=plot_single_station_concentration_bl(ufz_data,"Lock2",colname = event_names_lock2)
+reinhardsgrimma=plot_single_station_concentration_bl(ufz_data,"Lock1",colname = event_names_lock1)
+kauscha=plot_single_station_concentration_bl(ufz_data,"Geb1",colname = event_names_lock1)
+
+
+
+setwd("N:/Veröffentlichungen/ICUD_WST/pictures/baseline/overview")
+
+ggsave(filename=paste0("concentration_lock3",".png"),bg = 'white',
+       plot = (ms6),
+       width=21,
+       height=10,
+       units="cm")
+ggsave(filename=paste0("concentration_lock2",".png"),bg = 'white',
+       plot = (kreischa),
+       width=21,
+       height=10,
+       units="cm")
+ggsave(filename=paste0("concentration_lock1",".png"),bg = 'white',
+       plot = (reinhardsgrimma),
+       width=21,
+       height=10,
+       units="cm")
+ggsave(filename=paste0("concentration_geb1",".png"),bg = 'white',
+       plot = (kauscha),
+       width=21,
+       height=10,
+       units="cm")
+
+plot_list=list()
+titles=c("Lock1","Lock2","Lock3","Geb1")
+eventnames=list(c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-30","class","compound"),
+             c("2022-05-12","2022-06-08","2022-08-01","class","compound"),
+             c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-30","class","compound"),
+             c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-30","class","compound"))
+
+for(i in 1:4){
+  plot_list[[i]]=plot_single_station_concentration_bl(ufz_data,monitoring_station = titles[i],colname = eventnames[[i]],title = titles[i])
+}
+
+a=wrap_plots(plot_list) 
+
+a[[1]]<- a[[1]] + theme(axis.title.x = element_blank())
+a[[2]]<- a[[2]] + theme(axis.title.x = element_blank())
+a[[4]]<- a[[4]] + theme()
+
+b=wrap_plots(a)
+
+
+ggsave(filename=paste0("concentrations_together",".png"),bg = 'white',
+       plot = (b),
+       width=21,
+       height=21,
+       units="cm")
+
+
+
+##corr concentration with mean Q
+Kreischa_Q_1_mean=mean(CutTimeSeries(Q_Kreischa,"2022-04-13","2022-05-12"),na.rm=T)
+Kreischa_Q_2_mean=mean(CutTimeSeries(Q_Kreischa,"2022-05-12","2022-06-08"),na.rm=T)
+Kreischa_Q_3_mean=mean(CutTimeSeries(Q_Kreischa,"2022-06-08","2022-07-06"),na.rm=T)
+Kreischa_Q_4_mean=mean(CutTimeSeries(Q_Kreischa,"2022-07-06","2022-08-01"),na.rm=T)
+Kreischa_Q_5_mean=mean(CutTimeSeries(Q_Kreischa,"2022-08-01","2022-08-31"),na.rm=T)
+
+Q_MS6_1_mean=mean(CutTimeSeries(Q_MS6,"2022-04-13","2022-05-12"),na.rm=T)
+Q_MS6_2_mean=mean(CutTimeSeries(Q_MS6,"2022-05-12","2022-06-08"),na.rm=T)
+Q_MS6_3_mean=mean(CutTimeSeries(Q_MS6,"2022-06-08","2022-07-06"),na.rm=T)
+Q_MS6_4_mean=mean(CutTimeSeries(Q_MS6,"2022-07-06","2022-08-01"),na.rm=T)
+Q_MS6_5_mean=mean(CutTimeSeries(Q_MS6,"2022-08-01","2022-08-31"),na.rm=T)
+
+kauscha_Q_1_mean=mean(CutTimeSeries(kauscha_Q,"2022-04-13","2022-05-12"),na.rm=T)
+kauscha_Q_2_mean=mean(CutTimeSeries(kauscha_Q,"2022-05-12","2022-06-08"),na.rm=T)
+kauscha_Q_3_mean=mean(CutTimeSeries(kauscha_Q,"2022-06-08","2022-07-06"),na.rm=T)
+kauscha_Q_4_mean=mean(CutTimeSeries(kauscha_Q,"2022-07-06","2022-08-01"),na.rm=T)
+kauscha_Q_5_mean=mean(CutTimeSeries(kauscha_Q,"2022-08-01","2022-08-31"),na.rm=T)
+
+mean_Qs=rbind(c(Kreischa_Q_1_mean,Kreischa_Q_2_mean,Kreischa_Q_3_mean,Kreischa_Q_4_mean,Kreischa_Q_5_mean),
+              c(Q_MS6_1_mean,Q_MS6_2_mean,Q_MS6_3_mean,Q_MS6_4_mean,Q_MS6_5_mean),
+              c(kauscha_Q_1_mean,kauscha_Q_2_mean,kauscha_Q_3_mean,kauscha_Q_4_mean,kauscha_Q_5_mean))
+colnames(mean_Qs)=c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-31")
+
+
+
+
+concentrations_list=list(kreischa[[2]],ms6[[2]],kauscha[[2]])
+res=list()
+res_bfi=list()
+
+for(i in 1:3){
+# Your reference vector (replace this with your actual vector)
+ref_vector <- (mean_Qs[i,])
+
+# Extract only the numeric columns (i.e., the date columns)
+date_columns <- concentrations_list[[i]] %>% dplyr::select(-class)
+
+ref_vector=ref_vector[colnames(date_columns)]
+
+# Initialize a vector to store correlation results
+correlation_results <- numeric(nrow(date_columns))
+
+# Loop through each row and compute the correlation
+for (y in 1:nrow(date_columns)) {
+  correlation_results[y] <- cor(as.numeric(date_columns[y, ]), ref_vector, use = "complete.obs")
+  print()
+}
+
+res[[i]]=cbind(concentrations_list[[i]][,1],correlation_results)}
+
+
+
+
+####load basline overview
+for(i in 1:3){
+  # Your reference vector (replace this with your actual vector)
+  ref_vector <- (summary[i,])
+  
+  # Extract only the numeric columns (i.e., the date columns)
+  date_columns <- concentrations_list[[i]] %>% dplyr::select(-class)
+  
+  ref_vector=ref_vector[colnames(date_columns)]
+  
+  # Initialize a vector to store correlation results
+  correlation_results <- numeric(nrow(date_columns))
+  
+  # Loop through each row and compute the correlation
+  for (y in 1:nrow(date_columns)) {
+    correlation_results[y] <- cor(as.numeric(date_columns[y, ]), ref_vector, use = "complete.obs")
+  }
+  
+  res_bfi[[i]]=cbind(concentrations_list[[i]][,1],correlation_results)}
+
+
+

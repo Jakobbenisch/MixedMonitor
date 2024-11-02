@@ -1,0 +1,348 @@
+source("N:/Veröffentlichungen/ICUD_WST/scripts/load_data.R")
+
+
+prepare_data=function(ufz_data,monitoring_station,sampling_condition,colname){
+  header=colnames(ufz_data)
+  selector=header[str_detect(header,as.character(monitoring_station))&str_detect(header,as.character(sampling_condition))]
+  monitoring_data=ufz_data[,selector]
+  monitoring_data=cbind(monitoring_data,class=ufz_data$`compound class level 1`,compound=ufz_data$Compound)
+  monitoring_data_final=monitoring_data %>% filter_ufz
+  monitoring_data_final <- monitoring_data_final %>%
+    filter(class != 0)
+  names(monitoring_data_final)<-colname
+  return(monitoring_data_final)
+}
+
+
+
+
+####concentrations
+
+comparing_stations=function(ufz_data,monitoring_station,sampling_condition,event_date=NA){
+  ufz_data=ufz_data[!is.na(ufz_data$`compound class level 1`),]
+  header=colnames(ufz_data)
+  stations=list()
+
+  if(sampling_condition=="BL"){
+    print("BL")
+    
+    for(i in 1:length(monitoring_station))
+    {selector=header[str_detect(header,as.character(monitoring_station[i]))&str_detect(header,as.character(sampling_condition))]
+    print(selector)
+    monitoring_data=ufz_data[,selector]
+    monitoring_data=cbind(monitoring_data,class=ufz_data$`compound class level 1`,compound=ufz_data$Compound)
+    
+    summary <- monitoring_data %>%
+      group_by(class) %>%
+      summarise(across(starts_with("MixMo"), sum, na.rm = TRUE))
+    
+    summary_stats <- summary %>%
+      rowwise() %>%  # Ensures calculations are done row-wise per class
+      mutate(
+        mean = mean(c_across(starts_with("MixMo")), na.rm = TRUE),
+        sd = sd(c_across(starts_with("MixMo")), na.rm = TRUE)
+      )
+    
+    filtered_summary_stats <- summary_stats %>%
+      select(class, mean, sd)  # Selecting only the 'class', 'mean', and 'sd' columns
+    
+    
+    stations[[i]]=filtered_summary_stats
+    colnames(stations[[i]])<-c("class",paste0(monitoring_station[i]," mean"), paste0(monitoring_station[i]," sd"))
+    
+    print(stations)
+    
+    
+    }
+    
+    
+  }else{
+    
+     if(is.character(event_date)==T){
+      print("Event_single")
+      for(i in 1:length(event_date))
+      {selector=header[str_detect(header,as.character(monitoring_station))&str_detect(header,as.character(sampling_condition))&str_detect(header,as.character(event_date[i]))]
+      monitoring_data=ufz_data[,selector]
+      monitoring_data=cbind(class=ufz_data$`compound class level 1`,compound=ufz_data$Compound,monitoring_data)
+      
+      summary <- monitoring_data %>%
+        group_by(class) %>%
+        summarise(across(starts_with("MixMo"), sum, na.rm = TRUE))
+      
+      stations[[i]]=summary
+      colnames(stations[[i]])<-c("class",paste0(as.Date(event_date[i], format = "%y%m%d")))
+      }
+       
+      }else{
+      print("Event_mean")
+      for(i in 1:length(monitoring_station))
+      {selector=header[str_detect(header,as.character(monitoring_station[i]))&str_detect(header,as.character(sampling_condition))]
+      monitoring_data=ufz_data[,selector]
+      monitoring_data=cbind(monitoring_data,class=ufz_data$`compound class level 1`,compound=ufz_data$Compound)
+      
+      summary <- monitoring_data %>%
+        group_by(class) %>%
+        summarise(across(starts_with("MixMo"), sum, na.rm = TRUE))
+      
+      summary_stats <- summary %>%
+        rowwise() %>%  # Ensures calculations are done row-wise per class
+        mutate(
+          mean = mean(c_across(starts_with("MixMo")), na.rm = TRUE),
+          sd = sd(c_across(starts_with("MixMo")), na.rm = TRUE)
+        )
+      
+      filtered_summary_stats <- summary_stats %>%
+        select(class, mean, sd)  # Selecting only the 'class', 'mean', and 'sd' columns
+      
+      stations[[i]]=filtered_summary_stats
+      colnames(stations[[i]])<-c("class",paste0(monitoring_station[i]," mean"), paste0(monitoring_station[i]," sd"))
+      }}}
+      
+      # stations[[i]]=monitoring_data %>% 
+      #   #filter_ufz %>%
+      #   rowwise(class,compound) %>% 
+      #   summarise(mean <- mean(c_across(where(is.numeric))),
+      #             sd = sd(c_across(where(is.numeric))))
+      # colnames(stations[[i]])<-c("class", "compound", paste0(monitoring_station[i], " mean"),paste0(monitoring_station[i], " sd"))}
+  
+  comp_data=stations %>% reduce(inner_join, by=c("class"))
+  issues=which(is.na(comp_data[,c(1,2)]))
+  if(is.integer(issues)){comp_data=comp_data}else{comp_data=comp_data[-issues,]}
+  comp_data[is.na(comp_data)]<-0
+  
+  plot=melt(comp_data,id.vars = c("class"))
+  
+  
+  if(sampling_condition=="BL"|is.character(event_date)==F)
+  { 
+  
+  # Separate mean and sd into two data frames
+  mean_data <- plot %>% filter(grepl("mean", variable))
+  sd_data <- plot %>% filter(grepl("sd", variable))
+  
+  # Remove 'mean' and 'sd' text from the variable columns
+  mean_data$variable <- gsub(" mean", "", mean_data$variable)
+  sd_data$variable <- gsub(" sd", "", sd_data$variable)
+  
+  plot_data <- merge(mean_data, sd_data, by = c("class", "variable"), suffixes = c("_mean", "_sd"))
+  
+  # p1=ggplot(data= plot_test ,aes(x=value,y =reorder(class,value) , fill=forcats::fct_rev(variable)))+
+  #   geom_bar(stat="identity", position=position_dodge())+
+  #   theme_light()+
+  #   xlab("concentration in ng/l") + ylab("")+labs(fill="Monitoring Station")+
+  #   scale_fill_manual(values=brewer.pal(length(monitoring_station), "Accent"))+
+  #   guides(fill=guide_legend(reverse = T))+
+  #   theme(legend.position="bottom")
+  
+  
+  p1=ggplot(data = plot_data, aes(x = value_mean    , y = reorder(class, value_mean    ), fill = forcats::fct_rev(variable))) +
+    geom_bar(stat = "identity", position = position_dodge(.8), color = "black", size = .1, width = .8) +
+    geom_errorbar(aes(xmin = value_mean - value_sd, xmax = value_mean + value_sd), 
+                  width = 0.2,  # Controls the width of the error bars
+                  size = 0.2,   # Controls the thickness of the error bars (reduce this for thinner lines)                  
+                  position = position_dodge(0.8)) +
+    
+    {if(sampling_condition=="BL"){
+    scale_fill_manual(values=brewer.pal(length(monitoring_station), "Set2"))
+      }else{
+        scale_fill_manual(values=brewer.pal(length(monitoring_station), "Accent"))}}+
+    
+    theme_light() +
+    xlab("mean concentration in ng/l") + ylab("")+labs(fill="Monitoring Station:")+
+    theme(
+        legend.position = c(0.5, 0.086),
+        legend.direction = "horizontal",
+        legend.text = element_text(size = 6),
+        legend.title = element_text(size = 6),
+        axis.text = element_text(size = 7),
+        axis.title = element_text(size = 7),
+        legend.key.size = unit(.5, "cm")
+    )+guides(fill=guide_legend(reverse = T))
+  
+  }else{
+    
+    plot_test=plot
+  
+    p1=ggplot(data= plot_test ,aes(x=value,y =reorder(class,value) , fill=forcats::fct_rev(variable)))+
+      geom_bar(stat = "identity", position = position_dodge(.8), color = "black", size = .1, width = .8) +
+      
+    scale_fill_manual(values=brewer.pal(length(event_date), "Set3"))+
+    
+    theme_light() +
+    xlab("concentration in ng/l") + ylab("")+labs(fill="Events at:")+
+    theme(
+      legend.position = c(0.5, 0.15),
+      legend.direction = "horizontal",
+      legend.text = element_text(size = 6),
+      legend.title = element_text(size = 6),
+      axis.text = element_text(size = 7),
+      axis.title = element_text(size = 7),
+      legend.key.size = unit(.5, "cm")
+    )+guides(fill=guide_legend(reverse = T))
+  }
+  
+  return(list(p1,stations))}
+
+
+  
+
+tryinfunction=comparing_stations(ufz_data=ufz_data,monitoring_station=c("Lock1","Lock2","Lock3"),sampling_condition="BL")
+tryinfunction=comparing_stations(ufz_data=ufz_data,monitoring_station=c("Lock1","Lock2","Lock3","Geb1"),sampling_condition="BL")
+
+
+
+
+showdata=do.call("cbind",tryinfunction[[2]])
+showdata=showdata[,c(1,2,5,8)]
+
+# Check for increasing values
+showdata$Increasing <- apply(showdata[, 2:4], 1, function(row) {
+  all(diff(row) >= 0)  # Check if the difference between subsequent values is >= 0
+})
+
+# Show rows where values are increasing
+increasing_rows <- showdata[showdata$Increasing, ]
+print(increasing_rows)
+
+# Check for decreasing values
+showdata$Decreasing <- apply(showdata[, 3:4], 1, function(row) {
+  all(diff(row) <= 0)  # Check if the difference between subsequent values is <= 0
+})
+
+# Show rows where values are decreasing
+decreasing_rows <- showdata[showdata$Decreasing, ]
+print(decreasing_rows)
+
+
+setwd("N:/Veröffentlichungen/ICUD_WST/pictures/baseline/overview")
+
+ggsave(filename=paste0("mean_concentrations_all_stations",".png"),bg = 'white',
+       plot = (tryinfunction[[1]]),
+       width=21,
+       height=10,
+       units="cm")
+
+
+selector=header[str_detect(header,as.character("Geb3"))&str_detect(header,"EV")]
+
+tryinfunction_lock2=comparing_stations(ufz_data=ufz_data,monitoring_station=c("Lock2"),sampling_condition="EV",event_date=c("220517"))
+tryinfunction_lock3=comparing_stations(ufz_data=ufz_data,monitoring_station=c("Lock3"),sampling_condition="EV",event_date=c("220517","220628","220823"))
+tryinfunction_lock4=comparing_stations(ufz_data=ufz_data,monitoring_station=c("Lock4"),sampling_condition="EV",event_date=c("220517","220628","220823","220827"))
+
+tryinfunction_geb2=comparing_stations(ufz_data=ufz_data,monitoring_station=c("Geb2"),sampling_condition="EV",
+                                      event_date=c("220424","220517","220527","220530","220604","220706","220709","220823","220831"))
+tryinfunction_geb3=comparing_stations(ufz_data=ufz_data,monitoring_station=c("Geb3"),sampling_condition="EV",
+                                      event_date=c("220517","220604","220628","220706","220709"))
+
+zsam=list(tryinfunction_lock2,tryinfunction_lock3,tryinfunction_lock4,tryinfunction_geb2,tryinfunction_geb3)
+name_stations=c("Lock2","Lock3","Lock4","Geb2","Geb3")
+
+
+setwd("N:/Veröffentlichungen/ICUD_WST/pictures/events/load and concentration")
+
+for(i in 1:length(zsam)){
+  ggsave(filename=paste0(name_stations[i]," event_concentrations",".png"),bg = 'white',
+         plot = (zsam[[i]]),
+         width=21,
+         height=10,
+         units="cm")
+}
+
+
+
+
+
+mean_ev_lock=comparing_stations(ufz_data=ufz_data,monitoring_station=c("Lock2","Lock3","Lock4"),sampling_condition="EV")
+mean_ev_geb=comparing_stations(ufz_data=ufz_data,monitoring_station=c("Geb2","Geb3"),sampling_condition="EV")
+
+zsam=list(mean_ev_lock,mean_ev_geb)
+name_station=c("Lock","Geb")
+
+for(i in 1:length(zsam)){
+  ggsave(filename=paste0(name_station[i],"mean_event_concentrations",".png"),bg = 'white',
+         plot = (zsam[[i]]),
+         width=21,
+         height=10,
+         units="cm")
+}
+
+####compare stations bl and ev
+
+#lock2
+
+tryinfunction=comparing_stations(ufz_data=ufz_data,monitoring_station=c("Lock2"),sampling_condition="BL")
+lock2_bl_ev=merge(x = tryinfunction_lock2[[2]][[1]],y=tryinfunction[[2]][[1]],by = "class")
+lock2_bl_ev <- lock2_bl_ev %>%
+  mutate(is_greater = `2022-05-17` > `Lock2 mean`)
+lock2_bl_ev <- lock2_bl_ev %>%
+  mutate(how_much = `2022-05-17` / `Lock2 mean`)
+print(mean(lock2_bl_ev$how_much))
+print(lock2_bl_ev)
+
+#lock3
+
+tryinfunction_bl=comparing_stations(ufz_data=ufz_data,monitoring_station=c("Lock3"),sampling_condition="BL")
+tryinfunction_ev=comparing_stations(ufz_data=ufz_data,monitoring_station=c("Lock3"),sampling_condition="EV")
+
+lock3_bl_ev=merge(x = tryinfunction_bl[[2]][[1]],y=tryinfunction_ev[[2]][[1]],by = "class")
+lock3_bl_ev <- lock3_bl_ev %>%
+  mutate(is_greater_druing_events = "Lock3 mean.y" > "Lock3 mean.x")
+lock3_bl_ev <- lock3_bl_ev %>%
+  mutate(how_much = `Lock3 mean.y` / `Lock3 mean.x`)
+print(mean(lock3_bl_ev$how_much))
+
+#lock4
+
+tryinfunction_bl=comparing_stations(ufz_data=ufz_data,monitoring_station=c("Lock3"),sampling_condition="BL")
+tryinfunction_ev=comparing_stations(ufz_data=ufz_data,monitoring_station=c("Lock4"),sampling_condition="EV")
+
+lock4_bl_ev=merge(x = tryinfunction_bl[[2]][[1]],y=tryinfunction_ev[[2]][[1]],by = "class")
+lock4_bl_ev <- lock4_bl_ev %>%
+  mutate(is_greater_druing_events = "Lock4 mean " > "Lock3 mean")
+lock4_bl_ev <- lock4_bl_ev %>%
+  mutate(how_much = `Lock4 mean` / `Lock3 mean`)
+
+
+#geb2
+
+tryinfunction_bl=comparing_stations(ufz_data=ufz_data,monitoring_station=c("Geb1"),sampling_condition="BL")
+tryinfunction_ev=comparing_stations(ufz_data=ufz_data,monitoring_station=c("Geb2"),sampling_condition="EV")
+
+geb2_bl_ev=merge(x = tryinfunction_bl[[2]][[1]],y=tryinfunction_ev[[2]][[1]],by = "class")
+geb2_bl_ev <- geb2_bl_ev %>%
+  mutate(is_greater_druing_events = "Geb2 mean.y" > "Geb1 mean.x")
+geb2_bl_ev <- geb2_bl_ev %>%
+  mutate(how_much = `Geb2 mean` / `Geb1 mean`)
+
+#geb3
+
+tryinfunction_bl=comparing_stations(ufz_data=ufz_data,monitoring_station=c("Geb1"),sampling_condition="BL")
+tryinfunction_ev=comparing_stations(ufz_data=ufz_data,monitoring_station=c("Geb3"),sampling_condition="EV")
+
+geb3_bl_ev=merge(x = tryinfunction_bl[[2]][[1]],y=tryinfunction_ev[[2]][[1]],by = "class")
+geb3_bl_ev <- geb3_bl_ev %>%
+  mutate(is_greater_druing_events = "Geb3 mean.y" > "Geb1 mean.x")
+geb3_bl_ev <- geb3_bl_ev %>%
+  mutate(how_much = `Geb3 mean` / `Geb1 mean`)
+
+
+###comparison geb and lock
+
+comp_lock_geb_3=(geb3_bl_ev$`Geb3 mean`>lock4_bl_ev$`Lock4 mean`)
+comp_lock_geb_3=cbind(geb3_bl_ev$class,comp_lock_geb_3)
+comp_lock_geb_2=(geb2_bl_ev$`Geb2 mean`>lock4_bl_ev$`Lock4 mean`)
+comp_lock_geb_2=cbind(geb2_bl_ev$class,comp_lock_geb_2)
+
+
+####solvent mystery:
+
+ufz_data=ufz_data[!is.na(ufz_data$`compound class level 1`),]
+header=colnames(ufz_data)
+
+monitoring_data=ufz_data[,c("MixMo_DE_Geb1_BL_220608","MixMo_DE_Geb2_EV_220517")]
+monitoring_data=cbind(monitoring_data,class=ufz_data$`compound class level 1`,compound=ufz_data$Compound)
+
+filtered_data <- monitoring_data %>%
+  filter(class == "personal care and household")
+
+filtered_data

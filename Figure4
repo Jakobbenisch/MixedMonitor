@@ -1,0 +1,605 @@
+^source("N:/Veröffentlichungen/ICUD_WST/scripts/load_data.R")
+
+
+prepare_data=function(ufz_data,monitoring_station,sampling_condition,colname){
+  header=colnames(ufz_data)
+  selector=header[str_detect(header,as.character(monitoring_station))&str_detect(header,as.character(sampling_condition))]
+  monitoring_data=ufz_data[,selector]
+  monitoring_data_final=cbind(monitoring_data,class=ufz_data$`compound class level 1`,compound=ufz_data$Compound)
+  #monitoring_data_final=monitoring_data %>% filter_ufz
+  monitoring_data_final <- monitoring_data_final %>%
+    filter(class != 0)
+  names(monitoring_data_final)<-colname
+  return(monitoring_data_final)
+}
+
+
+
+plot_single_station_load=function(ufz_data,monitoring_station,sampling_condition,colname,Q,baseline,title=NA){
+  ufz_data=ufz_data[!is.na(ufz_data$`compound class level 1`),]
+  monitoring_data=prepare_data(ufz_data,monitoring_station,sampling_condition,colname)
+  Q_data=list()
+  
+  for(i in 1:nrow(baseline)){
+    Q_data[[i]]=CutTimeSeries(Q,baseline[i,1],baseline[i,2])
+    print(paste0("Mean Q ",baseline[i,1]," - ",baseline[i,2]," : ", round(mean(Q_data[[i]],na.rm=T),3)," m³/s"))}
+  
+  loads_test=t(t(monitoring_data[,1:(ncol(monitoring_data)-2)]*lapply(Q_data,mean,na.rm=T)))/1000
+  
+  loads_names=data.frame(loads_test,monitoring_data$class,monitoring_data$compound)
+  colnames(loads_names)=colname
+  plot=melt(loads_names,id.vars = c("class","compound"))
+
+  summarized_data <- plot %>%
+    group_by(class, variable) %>%
+    summarize(value = sum(value, na.rm = TRUE)) %>%
+    ungroup()
+  
+  
+  p1=ggplot(data = summarized_data, aes(x = value, y = reorder(class, value), fill = forcats::fct_rev(variable))) +
+    geom_bar(stat = "identity", position = position_dodge(.8), color = "black", size = .1, width = .8) +
+    scale_fill_manual(values = if (ncol(monitoring_data) == 7) {
+      brewer.pal(ncol(monitoring_data) - 2, "Set2")
+    } else {
+      c("#FC8D62", "#E78AC3", "#A6D854")
+    }) +
+    theme_light() +
+    xlab("load in mg/s")
+  
+  if (!is.na(title)) {
+    p1 <- p1 + ggtitle(title) +
+      theme(
+        legend.position = "none",
+        axis.text = element_text(size = 7),
+        axis.title = element_text(size = 7),
+        axis.title.y = element_blank()
+      )
+  } else {
+    p1 <- p1 + ylab("") +
+      labs(fill = "Endpoint of sampling:") +
+      theme(
+        legend.position = c(0.5, 0.086),
+        legend.direction = "horizontal",
+        legend.text = element_text(size = 6),
+        legend.title = element_text(size = 6),
+        axis.text = element_text(size = 7),
+        axis.title = element_text(size = 7),
+        legend.key.size = unit(.5, "cm")
+      ) +
+      guides(fill = guide_legend(reverse = TRUE))
+  }
+  
+  print(p1)
+  return(p1)
+}
+
+  
+
+eventnames=list(c("2022-05-12","2022-06-08","2022-08-01","class","compound"),
+                c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-30","class","compound"),
+                c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-30","class","compound"))
+
+
+event_names_lock3<-c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-30","class","compound")
+event_names_lock2<-c("2022-05-12","2022-06-08","2022-08-01","class","compound")
+event_names_lock1<-c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-30","class","compound")
+
+
+baseline_lock=data.frame(
+  start=c("2022-04-13","2022-05-12","2022-06-08","2022-07-06","2022-08-01"),
+  end=c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-31"))
+
+baseline_lock2=data.frame(
+  start=c("2022-04-13","2022-05-12","2022-07-06"),
+  end=c("2022-05-12","2022-06-08","2022-08-01"))
+
+
+
+ms6_load=plot_single_station_load(ufz_data = ufz_data,monitoring_station = "Lock3",sampling_condition = "BL",Q = Q_MS6,colname = event_names_lock3,baseline = baseline_lock)
+kreischa_load=plot_single_station_load(ufz_data = ufz_data,monitoring_station = "Lock2",sampling_condition = "BL",Q = Q_Kreischa,colname = event_names_lock2,baseline = baseline_lock2)
+kauscha_load=plot_single_station_load(ufz_data = ufz_data,monitoring_station = "Geb1",sampling_condition = "BL",Q = kauscha_Q,colname = event_names_lock3,baseline = baseline_lock)
+
+
+
+setwd("N:/Veröffentlichungen/ICUD_WST/pictures/baseline/overview")
+
+ggsave(filename=paste0("load_lock3",".png"),bg = 'white',
+       plot = (ms6_load),
+       width=21,
+       height=10,
+       units="cm")
+ggsave(filename=paste0("load_lock2",".png"),bg = 'white',
+       plot = (kreischa_load),
+       width=21,
+       height=10,
+       units="cm")
+# ggsave(filename=paste0("load_lock1",".png"),bg = 'white',
+#        plot = (reinhardsgrimma),
+#        width=21,
+#        height=10,
+#        units="cm")
+ggsave(filename=paste0("load_geb1",".png"),bg = 'white',
+       plot = (kauscha_load),
+       width=21,
+       height=10,
+       units="cm")
+
+plot_list=list()
+titles=c("Lock2","Lock3","Geb1")
+
+eventnames=list(c("2022-05-12","2022-06-08","2022-08-01","class","compound"),
+                c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-30","class","compound"),
+                c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-30","class","compound"))
+
+Qs=list(Q_Kreischa,Q_MS6,kauscha_Q)
+
+event_names_lock3<-c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-30","class","compound")
+event_names_lock2<-c("2022-05-12","2022-06-08","2022-08-01","class","compound")
+event_names_lock1<-c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-30","class","compound")
+
+
+baseline_lock=data.frame(
+  start=c("2022-04-13","2022-05-12","2022-06-08","2022-07-06","2022-08-01"),
+  end=c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-31"))
+
+baseline_lock2=data.frame(
+  start=c("2022-04-13","2022-05-12","2022-07-06"),
+  end=c("2022-05-12","2022-06-08","2022-08-01"))
+
+baseline=list(baseline_lock2,baseline_lock,baseline_lock)
+
+
+#ms6_load=plot_single_station_load(ufz_data = ufz_data,monitoring_station = "Lock3",sampling_condition = "BL",Q = Q_MS6,colname = event_names,baseline = baseline_lock)
+
+for(i in 1:3){
+  plot_list[[i]]=plot_single_station_load(ufz_data,monitoring_station = titles[i],sampling_condition = "BL",Q = Qs[[i]],colname = eventnames[[i]],baseline = baseline[[i]],title = titles[i])
+}
+
+a=wrap_plots(plot_list,ncol = 2)
+
+ggsave(filename=paste0("loads_together_2",".png"),bg = 'white',
+       plot = (a),
+       width=21,
+       height=21,
+       units="cm")
+
+
+
+comparing_stations_bl_load=function(ufz_data,monitoring_station,Q_list){
+
+  ufz_data=ufz_data[!is.na(ufz_data$`compound class level 1`),]
+  header=colnames(ufz_data)
+  stations=list()
+  
+print("BL")
+    for(i in 1:length(monitoring_station))
+      
+    {selector=header[str_detect(header,as.character(monitoring_station[i]))&str_detect(header,"BL")]
+    monitoring_data=ufz_data[,selector]
+    monitoring_data=cbind(monitoring_data,class=ufz_data$`compound class level 1`,compound=ufz_data$Compound)
+    monitoring_data <- monitoring_data %>%
+      filter(class != 0)
+    
+    summary <- monitoring_data %>%
+      group_by(class) %>%
+      summarise(across(starts_with("MixMo"), sum, na.rm = TRUE))
+    summary_stats <- summary %>%
+      rowwise() %>%  # Ensures calculations are done row-wise per class
+      mutate(
+        mean = mean(c_across(starts_with("MixMo")), na.rm = TRUE)*mean(Q_list[[i]],na.rm = T)/1000,
+        mean_value = mean(c_across(starts_with("MixMo")), na.rm = TRUE)*mean(Q_list[[i]],na.rm = T),
+        sd = (mean_value * sqrt(sd(c_across(starts_with("MixMo")), na.rm = TRUE) / mean(c_across(starts_with("MixMo")), na.rm = TRUE))^2
+        + (sd(Q_list[[i]],na.rm = T) / mean(Q_list[[i]],na.rm = T)^2))/1000)
+          
+
+    filtered_summary_stats <- summary_stats %>%
+      select(class, mean, sd)  # Selecting only the 'class', 'mean', and 'sd' columns
+    
+    
+    stations[[i]]=filtered_summary_stats
+    colnames(stations[[i]])<-c("class",paste0(monitoring_station[i]," mean"), paste0(monitoring_station[i]," sd"))
+    }
+
+comp_data=stations %>% reduce(inner_join, by=c("class"))
+issues=which(is.na(comp_data[,c(1,2)]))
+if(is.integer(issues)){comp_data=comp_data}else{comp_data=comp_data[-issues,]}
+comp_data[is.na(comp_data)]<-0
+
+plot=melt(comp_data,id.vars = c("class"))
+
+# Separate mean and sd into two data frames
+mean_data <- plot %>% filter(grepl("mean", variable))
+sd_data <- plot %>% filter(grepl("sd", variable))
+
+# Remove 'mean' and 'sd' text from the variable columns
+mean_data$variable <- gsub(" mean", "", mean_data$variable)
+sd_data$variable <- gsub(" sd", "", sd_data$variable)
+
+plot_data <- merge(mean_data, sd_data, by = c("class", "variable"), suffixes = c("_mean", "_sd"))
+
+p1=ggplot(data= plot_data ,aes(x=value_mean,y =reorder(class,value_mean) , fill=forcats::fct_rev(variable)))+
+  geom_bar(stat = "identity", position = position_dodge(.8), color = "black", size = .1, width = .8) +
+  geom_errorbar(aes(xmin = value_mean - value_sd, xmax = value_mean + value_sd), 
+                width = 0.2,  # Controls the width of the error bars
+                size = 0.2,   # Controls the thickness of the error bars (reduce this for thinner lines)                  
+                position = position_dodge(0.8)) +
+  scale_fill_manual(values=brewer.pal(length(monitoring_station), "Set3"))+
+  
+  theme_light() +
+  ggtitle("Mean Loads Lock2 & Lock3") +
+  
+  xlab("mean loads in mg/s") + ylab("")+labs(fill="Monitoring Station:")+
+  theme(
+    legend.position = c(0.5, 0.15),
+    legend.direction = "horizontal",
+    legend.text = element_text(size = 6),
+    legend.title = element_text(size = 6),
+    axis.text = element_text(size = 7),
+    axis.title = element_text(size = 7),
+    legend.key.size = unit(.5, "cm")
+  )+guides(fill=guide_legend(reverse = T))
+}
+
+
+monitoring_station=c("Lock2","Lock3")
+
+Q_list=list(rbind(Q_Kreischa["2022-04-13/2022-06-08"],Q_Kreischa["2022-07-06/2022-08-01"]),Q_MS6["2022-04-13/2022-08-31"])
+
+lockilocki=comparing_stations_bl_load(ufz_data = ufz_data,monitoring_station = monitoring_station,Q_list = Q_list)
+
+ggsave(filename=paste0("loads_lock_comparison_2",".png"),bg = 'white',
+       plot = (lockilocki),
+       width=21,
+       height=21,
+       units="cm")
+
+
+
+##load differences
+
+comparing_stations_bl_load_diff=function(ufz_data,monitoring_station,Q_list,baseline=baseline){
+  
+  ufz_data=ufz_data[!is.na(ufz_data$`compound class level 1`),]
+  header=colnames(ufz_data)
+  stations=list()
+  
+  print("BL")
+  for(i in 1:length(monitoring_station))
+    
+  {
+    
+  mean_Q=c()
+  Q_mean_data=list()
+    
+  for(periods in 1:nrow(baseline[[i]])){
+    Q_mean_data[[periods]]=CutTimeSeries(Q_list[[i]],baseline[[i]][periods,1],baseline[[i]][periods,2])
+      print(paste0("Mean Q ",baseline[[i]][periods,1]," - ",baseline[[i]][periods,2]," : ", round(mean(Q_data[[periods]],na.rm=T),3)," m³/s"))
+      temp_mean_Q=mean(Q_mean_data[[periods]],na.rm=T)
+      mean_Q=rbind(mean_Q,temp_mean_Q)
+   }
+    
+    
+  selector=header[str_detect(header,as.character(monitoring_station[i]))&str_detect(header,"BL")]
+  monitoring_data=ufz_data[,selector]
+  monitoring_data=cbind(monitoring_data,class=ufz_data$`compound class level 1`,compound=ufz_data$Compound)
+  monitoring_data <- monitoring_data %>%
+    filter(class != 0)
+  
+  summary <- monitoring_data %>%
+    group_by(class) %>%
+    summarise(across(starts_with("MixMo"), sum, na.rm = TRUE))
+  
+    # Extract the numeric part of the summary tibble (excluding the 'class' column)
+  numeric_summary <- as.matrix(summary[, -1])  # Exclude the 'class' column and convert to matrix
+  
+  # Ensure mean_Q is a matrix and transpose it
+  mean_Q_vector <- t(as.matrix(mean_Q))
+  
+  # Check if the number of rows in mean_Q matches the number of columns in summary
+  if (ncol(mean_Q_vector) == ncol(numeric_summary)) {
+    # Multiply: multiply the first row of mean_Q with the first column of summary, and so on
+    result <- sweep(numeric_summary, 2, mean_Q_vector, `*`)  # Element-wise multiplication using sweep
+    result=result/1000
+    # Optionally, add back the 'class' column for reference
+    result_with_class <- cbind(class = summary$class, as.data.frame(result))
+    
+    # Print the result
+    print(result_with_class)
+  } else {
+    stop("The number of rows in mean_Q must match the number of columns in summary for element-wise multiplication.")
+  }
+  
+  
+  stations[[i]]=result_with_class
+  }
+  
+  
+  find_and_calculate_differences <- function(list1, list2) {
+    # Extract the column names of both lists (excluding the 'class' column)
+    colnames1 <- colnames(stations[[1]])[-1]  # Exclude the first 'class' column
+    colnames2 <- colnames(stations[[2]])[-1]  # Exclude the first 'class' column
+    
+    # Function to extract the date part from the column name
+    extract_date <- function(colname) {
+      sub(".*_(\\d{6})$", "\\1", colname)  # Regex to extract the last 6 digits (date)
+    }
+    
+    # Extract the dates from the column names
+    dates1 <- sapply(colnames1, extract_date)
+    dates2 <- sapply(colnames2, extract_date)
+    
+    common_dates <- intersect(dates1, dates2)
+    
+    # Loop over each common date and calculate the difference
+    for (date in common_dates) {
+      # Find the column name that corresponds to the date in each list
+      colname1 <- colnames1[which(dates1 == date)]
+      colname2 <- colnames2[which(dates2 == date)]
+      
+      # Extract the corresponding columns from both lists
+      col1 <- stations[[1]][[colname1]]
+      col2 <- stations[[2]][[colname2]]
+      
+      # Create a data frame for alignment by class
+      df1 <- data.frame(class = stations[[1]]$class, value = col1)
+      df2 <- data.frame(class = stations[[2]]$class, value = col2)
+      
+      # Merge the data frames by class to ensure alignment
+      merged_df <- merge(df1, df2, by = "class", suffixes = c("_list1", "_list2"))
+      
+      # Calculate the difference between the aligned values
+      merged_df$difference <- merged_df$value_list1 - merged_df$value_list2
+      
+      # Add the date column to the result
+      merged_df$date <- date
+      
+      # Append the result to the list
+      result_list[[date]] <- merged_df[, c("class", "date", "difference")]
+    }
+    return(result_list)
+    
+  }
+  
+  
+  differences <- find_and_calculate_differences(stations[[1]], stations[[2]])
+  
+  # Define the convert_date function
+  convert_date <- function(date_string) {
+    year <- paste0("20", substr(date_string, 1, 2))  # Add "20" to the year to make it 2022
+    month <- substr(date_string, 3, 4)
+    day <- substr(date_string, 5, 6)
+    formatted_date <- paste(year, month, day, sep = "-")
+    return(formatted_date)
+  }
+  
+  # Apply convert_date to the 'date' column in each element of the list using lapply
+  differences <- lapply(differences, function(df) {
+    df$date <- sapply(df$date, convert_date)  # Convert the date column
+    return(df)  # Return the updated data frame
+  })
+  
+  datas=do.call("rbind",differences)
+  
+  plot=melt(datas,id.vars = c("class","difference"))
+  
+  #plot_data <- merge(mean_data, sd_data, by = c("class", "variable"), suffixes = c("_mean", "_sd"))
+  
+  p1=ggplot(data= plot ,aes(x=difference ,y =reorder(class,difference ) , fill=forcats::fct_rev(value)))+
+    geom_bar(stat = "identity", position = position_dodge(.8), color = "black", size = .1, width = .8) +
+    scale_fill_manual(values =c("#FC8D62", "#E78AC3", "#A6D854")    )+
+    theme_light() +
+    xlab("loads difference in mg/s") + ylab("")+labs(fill="Monitoring Station:")+
+    ggtitle("Lock3 - Lock2") +
+    theme(
+      legend.position = c(0.75, 0.1),
+      legend.direction = "horizontal",
+      legend.text = element_text(size = 6),
+      legend.title = element_text(size = 6),
+      axis.text = element_text(size = 7),
+      axis.title = element_text(size = 7),
+      legend.key.size = unit(.5, "cm")
+    )+guides(fill=guide_legend(reverse = T))
+
+  return(p1)
+  }
+
+
+
+monitoring_station=c("Lock3","Lock2")
+
+baseline_lock=data.frame(
+  start=c("2022-04-13","2022-05-12","2022-06-08","2022-07-06","2022-08-01"),
+  end=c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-31"))
+
+baseline_lock2=data.frame(
+  start=c("2022-04-13","2022-05-12","2022-07-06"),
+  end=c("2022-05-12","2022-06-08","2022-08-01"))
+
+baseline=list(baseline_lock,baseline_lock2)
+
+Q_list=list(Q_MS6,Q_Kreischa)
+
+
+lockilocki2=comparing_stations_bl_load_diff(ufz_data = ufz_data,monitoring_station = monitoring_station,Q_list = Q_list,baseline=baseline)
+
+
+ggsave(filename=paste0("loads_lock_comparison_diffs",".png"),bg = 'white',
+       plot = (lockilocki2),
+       width=21,
+       height=21,
+       units="cm")
+
+
+
+####produceing plot for publication
+
+#####1
+plot_list_paper <- append(plot_list, list(lockilocki2))
+
+plot_list_paper <- lapply(plot_list_paper, function(p) p + theme(legend.position = "none"))
+
+combined_plot <- wrap_plots(plot_list_paper, ncol = 2)  # Arrange in 2 columns
+
+
+ggsave(filename=paste0("load_paper_1",".png"),bg = 'white',
+       plot = (combined_plot),
+       width=21,
+       height=15,
+       units="cm")
+
+######2
+plot_list_paper <- append(plot_list, list(lockilocki))
+
+plot_list_paper <- lapply(plot_list_paper, function(p) p + theme(legend.position = "none"))
+
+combined_plot <- wrap_plots(plot_list_paper, ncol = 2)  # Arrange in 2 columns
+
+
+ggsave(filename=paste0("load_paper_2",".png"),bg = 'white',
+       plot = (combined_plot),
+       width=21,
+       height=15,
+       units="cm")
+
+
+####caluculate total load during observation period
+
+single_station_load=function(ufz_data,monitoring_station,sampling_condition,colname,Q,baseline){
+  ufz_data=ufz_data[!is.na(ufz_data$`compound class level 1`),]
+  monitoring_data=prepare_data(ufz_data,monitoring_station,sampling_condition,colname)
+  Q_data=list()
+  
+  for(i in 1:nrow(baseline)){
+    Q_data[[i]]=CutTimeSeries(Q,baseline[i,1],baseline[i,2])
+    print(paste0("Mean Q ",baseline[i,1]," - ",baseline[i,2]," : ", round(mean(Q_data[[i]],na.rm=T),3)," m³/s"))}
+  
+  loads_test=t(t(monitoring_data[,1:(ncol(monitoring_data)-2)]*lapply(Q_data,mean,na.rm=T)))/1000
+  
+  loads_names=data.frame(loads_test,monitoring_data$class,monitoring_data$compound)
+  colnames(loads_names)=colname
+  
+   summed_concentrations <- loads_names %>%
+     group_by(class) %>%                                  # Group by class
+     summarise(across(starts_with("2022"), sum, na.rm = TRUE))  # Sum the concentrations per date, ignoring NA
+   
+  return(summed_concentrations)
+  #"load in mg/s"
+}
+
+total=as.Date("2022-04-13")-as.Date("2022-08-31")
+total=as.numeric(total,units="days")
+
+durations=list()
+for(i in 1:length(MS4)){
+  duration_ms4=start(MS4[[i]])-end(MS4[[i]])
+print(start(MS4[[i]]))
+durations[[i]]=as.numeric(duration_ms4, units = "secs")
+dura_4=do.call(rbind,durations)}
+sum(dura_4)/(3600*24)/total
+
+durations=list()
+for(i in 1:length(MS6)){
+  duration_ms6=start(MS6[[i]])-end(MS6[[i]])
+  print(start(MS6[[i]]))
+  durations[[i]]=as.numeric(duration_ms6, units = "secs")
+  dura_6=do.call(rbind,durations)}
+sum(dura_6)/(3600*24)/total
+
+
+durations=list()
+for(i in 1:length(MS7)){
+  duration_ms6=start(MS7[[i]])-end(MS7[[i]])
+  print(start(MS7[[i]]))
+  durations[[i]]=as.numeric(duration_ms6, units = "secs")
+  dura_7=do.call(rbind,durations)}
+dura_7=rbind(sum(dura_7[1:4]),dura_7[5],dura_7[6],dura_7[7])
+sum(dura_7)/(3600*24)/total
+
+
+durations=list()
+for(i in 1:length(MS8)){
+  duration_ms6=start(MS8[[i]])-end(MS8[[i]])
+  print(start(MS8[[i]]))
+  durations[[i]]=as.numeric(duration_ms6, units = "secs")
+  dura_8=do.call(rbind,durations)}
+dura_8=rbind(sum(dura_8[1:2]),dura_8[3],dura_8[4:5])
+sum(dura_8)/(3600*24)/total
+
+
+
+baseline_duration=data.frame(
+  start=as.Date(c("2022-04-13","2022-05-12","2022-06-08","2022-07-06","2022-08-01")),
+  end=as.Date(c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-31")))
+baseline_duration=(baseline_duration[,2]-baseline_duration[,1])
+baseline_duration <- as.numeric(baseline_duration, units = "secs")
+
+baseline_duration_ms6=baseline_duration
+baseline_duration_ms6[c(2,3,5)]=baseline_duration_ms6[c(2,3,5)]+dura_6
+baseline_duration_ms6=baseline_duration_ms6/1000#from mg to g
+
+baseline_duration_geb1=baseline_duration/1000
+
+
+event_names_lock3<-c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-30","class","compound")
+
+baseline_lock=data.frame(
+  start=c("2022-04-13","2022-05-12","2022-06-08","2022-07-06","2022-08-01"),
+  end=c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-31"))
+
+baseline_lock_duration=data.frame(
+  start=as.Date(c("2022-04-13","2022-05-12","2022-06-08","2022-07-06","2022-08-01")),
+  end=as.Date(c("2022-05-12","2022-06-08","2022-07-06","2022-08-01","2022-08-31")))
+baseline_lock_duration=(baseline_lock_duration[,2]-baseline_lock_duration[,1])*24*3600/1000 #from mg/s in g
+baseline_lock_duration[,1]=baseline_lock_duration
+
+
+ms6_load=single_station_load(ufz_data = ufz_data,monitoring_station = "Lock3",sampling_condition = "BL",Q = Q_MS6,colname = event_names_lock3,baseline = baseline_lock)
+
+# Multiply each column by the corresponding value in the baseline_lock_duration
+ms6_load_multiplied <- ms6_load %>%
+  mutate(across(starts_with("2022"), 
+                .fns = ~ . * baseline_duration_ms6[which(names(ms6_load) == cur_column()) - 1], 
+                .names = "{.col}_multiplied"))
+
+ms6_load_summed <- ms6_load_multiplied %>%
+  mutate(total_sum = rowSums(across(ends_with("_multiplied"))))
+
+subset_tibble_ms6 <- ms6_load_summed %>%
+  select(class, total_sum)
+
+
+kauscha_load=single_station_load(ufz_data = ufz_data,monitoring_station = "Geb1",sampling_condition = "BL",Q = kauscha_Q,colname = event_names_lock3,baseline = baseline_lock)
+
+# Multiply each column by the corresponding value in the baseline_lock_duration
+geb1_load_multiplied <- kauscha_load %>%
+  mutate(across(starts_with("2022"), 
+                .fns = ~ . * baseline_duration_geb1[which(names(kauscha_load) == cur_column()) - 1], 
+                .names = "{.col}_multiplied"))
+
+geb1_load_summed <- geb1_load_multiplied %>%
+  mutate(total_sum = rowSums(across(ends_with("_multiplied"))))
+
+subset_tibble_geb1 <- geb1_load_summed %>%
+  select(class, total_sum)
+
+
+
+###join with data from events_load
+
+check_geb_2=merge(x = events_geb2_load,y=subset_tibble_geb1,by="class")
+check_geb_2 <- check_geb_2 %>%
+  mutate(ratio= check_geb_2$total/check_geb_2$total_sum)
+
+check_geb_3=merge(x = events_geb3_load,y=subset_tibble_geb1,by="class")
+check_geb_3 <- check_geb_3 %>%
+  mutate(ratio= check_geb_3$total/check_geb_3$total_sum)
+
+check_lock_3=merge(x = events_lock3_load,y=subset_tibble_ms6,by="class")
+check_lock_3 <- check_lock_3 %>%
+  mutate(ratio= check_lock_3$total/check_lock_3$total_sum)
+
+check_lock_4=merge(x = events_lock4_load,y=subset_tibble_ms6,by="class")
+check_lock_4 <- check_lock_4 %>%
+  mutate(ratio= check_lock_4$total/check_lock_4$total_sum)
+
+

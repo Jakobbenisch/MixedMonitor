@@ -1,0 +1,248 @@
+source("N:/Veröffentlichungen/ICUD_WST/scripts/load_data.R")
+
+####load comparison
+
+monitoring_station=c("Lock3")
+monitoring_station=c("Lock3","Lock4")
+
+
+sampling_condition=c("EV")
+event_date=c("220517","220628","220823")
+Q_list=list(event_6_1,event_6_2,event_6_3)
+
+Q_list=list(MS6,MS4)
+
+test=comparing_stations_load(ufz_data,monitoring_station,event_date,Q_list)
+
+
+setwd("M:/Projekte/2022_Mixed_Monitor_UFZ/Daten/plots")
+ggsave(filename="load_event_overview_lock.png",
+       width=10,
+       height=5)
+units="cm"
+
+
+comparing_stations_load=function(ufz_data,monitoring_station,sampling_condition="EV",event_date=NA,Q_list){
+  
+  ufz_data=ufz_data[!is.na(ufz_data$`compound class level 1`),]
+  header=colnames(ufz_data)
+  stations=list()
+  
+  if(is.character(event_date)==T){
+    print("Event_single")
+  if(length(Q_list)!=length(event_date)) stop ("different number of events and discharge events")
+    
+  for(i in 1:length(event_date)){
+  selector=header[str_detect(header,as.character(monitoring_station))&str_detect(header,as.character(sampling_condition))&str_detect(header,as.character(event_date[i]))]
+  monitoring_data=ufz_data[,selector]
+  monitoring_data=cbind(class=ufz_data$`compound class level 1`,compound=ufz_data$Compound,monitoring_data)
+  print(monitoring_data)
+  
+  summary <- monitoring_data %>%
+    group_by(class) %>%
+    summarise(across(starts_with("MixMo"), ~ sum(.x, na.rm = TRUE) * sum(FillNaValues(Add.NA(Q_list[[i]],by = 1),use = "linear",maxgap = Inf)))/1000000)
+  stations[[i]]=summary
+  colnames(stations[[i]])<-c("class",paste0(as.Date(event_date[i], format = "%y%m%d")))
+  }
+  
+   }else{
+     print("Event_mean")
+     for(i in 1:length(monitoring_station))
+       
+     {selector=header[str_detect(header,as.character(monitoring_station[i]))&str_detect(header,as.character(sampling_condition))]
+     monitoring_data=ufz_data[,selector]
+     monitoring_data=cbind(monitoring_data,class=ufz_data$`compound class level 1`,compound=ufz_data$Compound)
+     monitoring_data[is.na(monitoring_data)]<-0
+     
+     summary <- monitoring_data %>%
+       group_by(class) %>%
+       summarise(across(starts_with("MixMo"), sum, na.rm = TRUE))
+     
+
+     summary_sd <- monitoring_data %>%
+       group_by(class) %>%
+       summarise(across(starts_with("MixMo"), sd, na.rm = TRUE))
+                 
+      Qs <- lapply(Q_list[[i]], function(x) {
+        sum(FillNaValues(Add.NA(x, by = 1), use = "linear", maxgap = Inf))
+      })
+      Qs_df <- as.data.frame(t(sapply(Qs, c)))
+      colnames(Qs_df) <- names(Qs)
+      
+      Q_statistics=data.frame(mean_Q=mean(as.numeric(Qs_df)),sd_Q=sd(as.numeric(Qs_df)))
+     print(Q_statistics)
+     summary_stats <- summary %>%
+       rowwise() %>%  # Ensures calculations are done row-wise per class
+       mutate(
+         mean = mean(c_across(starts_with("MixMo")), na.rm = TRUE)*Q_statistics$mean_Q/1000000,#g/s
+         sd = mean * sqrt((sd(c_across(starts_with("MixMo")), na.rm = TRUE) / mean(c_across(starts_with("MixMo")), na.rm = TRUE))^2
+         + (Q_statistics$sd_Q/ Q_statistics$mean_Q)^2))
+     print(summary_stats)
+     
+         
+     filtered_summary_stats <- summary_stats %>%
+       select(class, mean, sd)  # Selecting only the 'class', 'mean', and 'sd' columns
+     
+     stations[[i]]=filtered_summary_stats
+     colnames(stations[[i]])<-c("class",paste0(monitoring_station[i]," mean"), paste0(monitoring_station[i]," sd"))
+     }
+  }
+     
+
+
+comp_data=stations %>% reduce(inner_join, by=c("class"))
+issues=which(is.na(comp_data[,c(1,2)]))
+if(is.integer(issues)){comp_data=comp_data}else{comp_data=comp_data[-issues,]}
+comp_data[is.na(comp_data)]<-0
+
+plot=melt(comp_data,id.vars = c("class"))
+
+if(is.character(event_date)==F)
+{ # Separate mean and sd into two data frames
+  mean_data <- plot %>% filter(grepl("mean", variable))
+  sd_data <- plot %>% filter(grepl("sd", variable))
+  
+  # Remove 'mean' and 'sd' text from the variable columns
+  mean_data$variable <- gsub(" mean", "", mean_data$variable)
+  sd_data$variable <- gsub(" sd", "", sd_data$variable)
+  
+  plot_data <- merge(mean_data, sd_data, by = c("class", "variable"), suffixes = c("_mean", "_sd"))
+
+
+  p1=ggplot(data = plot_data, aes(x = value_mean    , y = reorder(class, value_mean    ), fill = forcats::fct_rev(variable))) +
+    geom_bar(stat = "identity", position = position_dodge(.8), color = "black", size = .1, width = .8) +
+    geom_errorbar(aes(xmin = value_mean - value_sd, xmax = value_mean + value_sd), 
+                  width = 0.2,  # Controls the width of the error bars
+                  size = 0.2,   # Controls the thickness of the error bars (reduce this for thinner lines)                  
+                  position = position_dodge(0.8)) +
+    
+    
+    scale_fill_manual(values=brewer.pal(length(monitoring_station), "Accent"))+
+    
+    theme_light() +
+    xlab("mean event mass in g") + ylab("")+labs(fill="Monitoring Station:")+
+    theme(
+      legend.position = c(0.5, 0.086),
+      legend.direction = "horizontal",
+      legend.text = element_text(size = 6),
+      legend.title = element_text(size = 6),
+      axis.text = element_text(size = 7),
+      axis.title = element_text(size = 7),
+      legend.key.size = unit(.5, "cm")
+    )+guides(fill=guide_legend(reverse = T))
+}else{
+  plot_test=plot
+  
+  p1=ggplot(data= plot_test ,aes(x=value,y =reorder(class,value) , fill=forcats::fct_rev(variable)))+
+    geom_bar(stat = "identity", position = position_dodge(.8), color = "black", size = .1, width = .8) +
+    
+    scale_fill_manual(values=brewer.pal(length(event_date), "Set3"))+
+    
+    theme_light() +
+    xlab("event mass in g") + ylab("")+labs(fill="Events at:")+
+    theme(
+      legend.position = c(0.5, 0.15),
+      legend.direction = "horizontal",
+      legend.text = element_text(size = 6),
+      legend.title = element_text(size = 6),
+      axis.text = element_text(size = 7),
+      axis.title = element_text(size = 7),
+      legend.key.size = unit(.5, "cm")
+    )+guides(fill=guide_legend(reverse = T))
+}
+
+}
+  
+
+events_lock2=comparing_stations_load(ufz_data,c("Lock2"),event_date=c("220517"),Q_list=list(event_K_1))
+events_lock3=comparing_stations_load(ufz_data,monitoring_station = "Lock3",event_date=c("220517","220628","220823"),Q_list=list(event_6_1,event_6_2,event_6_3))
+events_lock4=comparing_stations_load(ufz_data,monitoring_station = "Lock4",event_date=c("220517","220628","220823","220827"),Q_list=list(event_4_1,event_4_2,event_4_3,event_4_4))
+
+events_geb2=comparing_stations_load(ufz_data,monitoring_station = "Geb2",
+                                    #event_date=c("220424","220517","220527","220530","220604","220706","220709","220823","220831"),  
+                                    event_date=c("220517","220527","220530","220604","220706","220709","220823"),  #for two events there is no Q data
+                                    Q_list=list(event_7_1,event_7_2,event_7_3,event_7_4,event_7_5,event_7_6,event_7_7))
+
+events_geb3=comparing_stations_load(ufz_data,monitoring_station = "Geb3",
+                                    event_date=c("220517","220604","220628","220706","220709"),  
+                                    Q_list=list(event_8_1,event_8_4,event_8_5,event_8_6,event_8_6))
+
+events_plot=list(events_lock2,events_lock3,events_lock4,events_geb2,events_geb3)
+names=c("events_lock2","events_lock3","events_lock4","events_geb2","events_geb3")
+
+setwd("N:/Veröffentlichungen/ICUD_WST/pictures/events/load and concentration/loads")
+
+for(i in 1:length(events_plot)){
+ggsave(filename=paste0(names[i],".png"),bg = 'white',
+       plot = (events_plot[[i]]),
+       width=21,
+       height=10,
+       units="cm")
+}
+
+events_mean_geb=comparing_stations_load(ufz_data,monitoring_station = c("Geb2","Geb3"),
+                                    Q_list=list(list(event_7_1,event_7_2,event_7_3,event_7_4,event_7_5,event_7_6,event_7_7),
+                                                list(event_8_1,event_8_4,event_8_5,event_8_6,event_8_6)))
+
+events_mean_lock=comparing_stations_load(ufz_data,monitoring_station = c("Lock2","Lock3","Lock4"),
+                                        Q_list=list(list(event_K_1),
+                                                    list(event_6_1,event_6_2,event_6_3),
+                                                    list(event_4_1,event_4_2,event_4_3,event_4_4)))
+
+events_plot=list(events_mean_geb,events_mean_lock)
+names=c("mean_geb","mean_lock")
+
+setwd("N:/Veröffentlichungen/ICUD_WST/pictures/events/load and concentration/loads")
+
+for(i in 1:length(events_plot)){
+  ggsave(filename=paste0(names[i],".png"),bg = 'white',
+         plot = (events_plot[[i]]),
+         width=21,
+         height=10,
+         units="cm")
+}
+
+
+
+###mean event load
+
+calculating_load=function(ufz_data,monitoring_station,sampling_condition="EV",event_date=NA,Q_list){
+    ufz_data=ufz_data[!is.na(ufz_data$`compound class level 1`),]
+  header=colnames(ufz_data)
+  stations=list()
+  
+    if(length(Q_list)!=length(event_date)) stop ("different number of events and discharge events")
+    
+    for(i in 1:length(event_date)){
+      selector=header[str_detect(header,as.character(monitoring_station))&str_detect(header,as.character(sampling_condition))&str_detect(header,as.character(event_date[i]))]
+      monitoring_data=ufz_data[,selector]
+      monitoring_data=cbind(class=ufz_data$`compound class level 1`,compound=ufz_data$Compound,monitoring_data)
+      
+      summary <- monitoring_data %>%
+        group_by(class) %>%
+        summarise(across(starts_with("MixMo"), ~ sum(.x, na.rm = TRUE) * sum(FillNaValues(Add.NA(Q_list[[i]],by = 1),use = "linear",maxgap = Inf)))/1000000)
+      stations[[i]]=summary
+      colnames(stations[[i]])<-c("class",paste0(as.Date(event_date[i], format = "%y%m%d")))
+    }
+    
+  combined_data <- reduce(stations, left_join, by = "class")
+  
+  # Sum up the concentrations for each class across the events
+  summed_data <- combined_data %>%
+    rowwise() %>%
+    mutate(total = sum(c_across(starts_with("2022")), na.rm = TRUE))
+  
+  return(summed_data)}
+  
+events_geb2_load=calculating_load(ufz_data,monitoring_station = "Geb2",
+                                    #event_date=c("220424","220517","220527","220530","220604","220706","220709","220823","220831"),  
+                                    event_date=c("220517","220527","220530","220604","220706","220709","220823"),  #for two events there is no Q data
+                                    Q_list=list(event_7_1,event_7_2,event_7_3,event_7_4,event_7_5,event_7_6,event_7_7))
+events_geb3_load=calculating_load(ufz_data,monitoring_station = "Geb3",
+                                    event_date=c("220517","220604","220628","220706","220709"),  
+                                    Q_list=list(event_8_1,event_8_4,event_8_5,event_8_6,event_8_6))
+events_lock2_load=calculating_load(ufz_data,c("Lock2"),event_date=c("220517"),Q_list=list(event_K_1))
+events_lock3_load=calculating_load(ufz_data,monitoring_station = "Lock3",event_date=c("220517","220628","220823"),Q_list=list(event_6_1,event_6_2,event_6_3))
+events_lock4_load=calculating_load(ufz_data,monitoring_station = "Lock4",event_date=c("220517","220628","220823","220827"),Q_list=list(event_4_1,event_4_2,event_4_3,event_4_4))
+
+  

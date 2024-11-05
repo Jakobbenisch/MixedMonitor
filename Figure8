@@ -1,0 +1,188 @@
+source("N:/Veröffentlichungen/ICUD_WST/scripts/load_data.R")
+
+
+######
+
+plot_list=Q_data_events
+plot_event=Q_data_events
+event_char=list()
+event_char_station=list()
+event_char_2=list()
+
+start=Q_data_events
+end=Q_data_events
+wl_data=Q_data_events
+wl_prim=list(h_Kreischa,MS6_waterlevel,MS4_waterlevel,ms7_wl*100,ms8_wl*100)
+
+stationname=c("Lock2","Lock3","Lock4","Geb2","Geb3")
+thresh=c(47,33,45,85,85)
+p_ration=c(.5,.5,.5,.2,.2)
+
+for(i in 1:length(Q_data_events)){
+  for(y in 1:lengths(Q_data_events)[i]){
+    
+    list_q=Q_data_events[[i]][[y]]
+    a=DeleteDuplicteTime(Smooth(FillNaValues(Add.NA(list_q),use = "linear",maxgap = Inf),9))
+    max_q=round(max(a),digits = 2)
+    selected_event=EventDetector(a,quantile_limit = thresh[i],fixed_limit = NULL,min_duration_in_time_steps = 10,padding_in_time_steps = 140,padding_ratio = p_ration[i])
+    #select=a[abs(diff(a))>abs(mean(diff(a),na.rm = T)+sd(diff(a),na.rm = T))*.7,]
+    duration=round(difftime(end(selected_event),start(selected_event),units="hours"),digits = 2)
+    volume=round(sum(FillNaValues(Add.NA(selected_event,1),use = "linear",maxgap = Inf)),digits = 0)
+    #baseflow_ratio=round(mean(selected_event[which.min(a):(which.min(a)+2)])/max(a),digits = 3)*100
+    baseflow_ratio=round(
+      (mean(a[which.min(a):(which.min(a)+2)])*as.numeric(duration)*3600) / (volume),
+      digits = 3)*100
+    
+    positiv_grad=selected_event[diff(selected_event)>0]
+    negativ_grad=selected_event[diff(selected_event)<0]
+    ratio=round(length(negativ_grad)/length(positiv_grad),digits = 2)
+    
+    maximum=data.frame(time=index(selected_event[which(selected_event==max(selected_event)),]),max=max(selected_event))
+    
+    plot_data=cbind(a,selected_event)
+    plot_total=data.frame("time"=index(plot_data),"discharge"=coredata(plot_data[,1]),"peak"=coredata(plot_data[,2]))
+    colnames(plot_total)=c("time","discharge","peak")
+    
+    
+    peaks=data.frame("time"=index(selected_event),"peak"=coredata(selected_event))
+    peaks$index <- 1:nrow(peaks)
+    loessMod10=loess(VEC~index, data = peaks,span=.02)
+    smoothed10 <- predict(loessMod10) 
+    
+    if((i==4&y==1) | (i == 4 & y == 3) | (i == 4 & y == 5)){
+      first_peak=data.frame(time=maximum$time,VEC=maximum$max)
+      time_firstpeak=first_peak$time
+    }else{
+    first_peak=peaks[findpeaks(as.numeric(smoothed10),peakpat = "[+]{1,}[0]*[-]{1,}",minpeakheight = quantile(smoothed10,.1))[1,2],]
+    time_firstpeak=index(selected_event[findpeaks(as.numeric(smoothed10),peakpat = "[+]{1,}[0]*[-]{1,}",minpeakheight = quantile(smoothed10,.1))[1,2],])
+    }
+    time_beginning=start(selected_event)
+    time_diff=difftime(time_firstpeak,time_beginning,units="hours")
+    
+    ratio_firstpeak=round(as.numeric(time_diff)/as.numeric(duration),digits = 2)*100
+    
+    time_maximum=index(selected_event[which(selected_event==max(selected_event)),])
+    time_diff_max=difftime(time_maximum,time_beginning,units="hours")
+    ratio_min_max=round(as.numeric(time_diff_max)/as.numeric(duration),digits = 2)*100
+    
+    
+    start=start(list_q)
+    end=end(list_q)
+    temp_data=CutTimeSeries(wl_prim[[i]],start,end)
+    temp_data=Smooth(FillNaValues(Add.NA(temp_data),use = "linear",maxgap = Inf),7)
+    if(any(temp_data>min(temp_data,na.rm=T)+5)){
+      temp_start=temp_data[temp_data>min(temp_data,na.rm=T)+5]
+      start_sampler=index(temp_start[1,])
+      end_sampler=start_sampler+3*3600
+    }else{
+      start_sampler=index(temp_data[which(temp_data==max(temp_data))])-7*60
+      end_sampler=start_sampler+3*3600}
+    
+    
+    #plot_total$sampler=CutTimeSeries(plot_total$discharge,start_sampler,end_sampler)
+    event_char_station[[y]]=c(max_q,duration,volume,baseflow_ratio,ratio_min_max*100,ratio_firstpeak*100)
+    #rownames(event_char_station[[y]])=names(Q_data_events[[i]][[y]])
+    
+    plot_list[[i]][[y]]=plot_total
+    
+    plot_event[[i]][[y]]=ggplot(data=plot_total,aes(x=time,y=discharge))+
+      geom_line()+
+      geom_line(aes(x=time,y=peak),col="royalblue2",size=1.1)+
+      geom_line(data=plot_total %>% filter(between(time,start_sampler,end_sampler )),aes(x=time,y=discharge),col="lightgreen",size=1.2)+
+      geom_point(data=maximum,aes(x=time,y=max),col="tomato",size=3.9)+
+      geom_point(data=first_peak,aes(x=time,y=VEC),col="darkred",size=2.6,shape = 17)+
+      
+      theme_minimal()+
+      ylab("Discharge [m³/s]\n")+xlab("")+
+      scale_x_datetime(date_labels = "%d.%m. %H:%M",breaks = pretty_breaks(n = 3))+
+      # Force y-axis to start at 0
+      {if((i==4& y==2)| (i==4&y==7)){
+        scale_y_continuous(expand = c(0, 0), limits = c(0, max_q+.9*max_q)) 
+      }else{
+      scale_y_continuous(expand = c(0, 0), limits = c(0, max_q+.3*max_q)) }}+
+      {if((i==4&y==1)  |(i == 3 & y == 3) | (i == 2 & y == 3)| (i == 5 & y == 3) ){
+        #&plot_list[[3]][[3]]&plot_list[[2]][[3]]
+        annotate("text",x= plot_list[[i]][[y]][round(dim(plot_list[[i]][[y]])[1]*1/4,0),1], y=max(plot_list[[i]][[y]][,2])-max(plot_list[[i]][[y]][,2])*.2,label=paste0("Qmax: ",max_q," m³/s","\n",
+                                                                                                                                                                        "Duration: ",duration," h","\n",
+                                                                                                                                                                        "Event volume: ",volume," m³","\n",
+                                                                                                                                                                        "Baseflow proportion : ",baseflow_ratio,"%","\n",
+                                                                                                                                                                        "steepness maximum: ",ratio_min_max,"%","\n",
+                                                                                                                                                                        "steepness first peak: ",ratio_firstpeak,"%"),
+                 size = 3)
+      }else if((i==4& !y==1)){
+        annotate("text",x= plot_list[[i]][[y]][round(dim(plot_list[[i]][[y]])[1]*3/4,0),1], y=max(plot_list[[i]][[y]][,2])-max(plot_list[[i]][[y]][,2])*.09,label=paste0("Qmax: ",max_q," m³/s","\n",
+                                                                                                                                 "Duration: ",duration," h","\n",
+                                                                                                                                 "Event volume: ",volume," m³","\n",
+                                                                                                                                 "Baseflow proportion : ",baseflow_ratio,"%","\n",
+                                                                                                                                 "steepness maximum: ",ratio_min_max,"%","\n",
+                                                                                                                                 "steepness first peak: ",ratio_firstpeak,"%"),
+                 size = 3)
+        
+      }else if((i==4& y==2)| (i==4&y==7)){
+        annotate("text",x= plot_list[[i]][[y]][round(dim(plot_list[[i]][[y]])[1]*3/4,0),1], y=max(plot_list[[i]][[y]][,2])-max(plot_list[[i]][[y]][,2])*.8,label=paste0("Qmax: ",max_q," m³/s","\n",
+                                                                                                                                                                         "Duration: ",duration," h","\n",
+                                                                                                                                                                         "Event volume: ",volume," m³","\n",
+                                                                                                                                                                         "Baseflow proportion : ",baseflow_ratio,"%","\n",
+                                                                                                                                                                         "steepness maximum: ",ratio_min_max,"%","\n",
+                                                                                                                                                                         "steepness first peak: ",ratio_firstpeak,"%"),
+                 size = 3)
+        
+
+      }else{
+      annotate("text",x= plot_list[[i]][[y]][round(dim(plot_list[[i]][[y]])[1]*3/4,0),1], y=max(plot_list[[i]][[y]][,2])-max(plot_list[[i]][[y]][,2])*.2,label=paste0("Qmax: ",max_q," m³/s","\n",
+                                                                                                                                                                      "Duration: ",duration," h","\n",
+                                                                                                                                                                      "Event volume: ",volume," m³","\n",
+                                                                                                                                                                      "Baseflow proportion : ",baseflow_ratio,"%","\n",
+                                                                                                                                                                      "steepness maximum: ",ratio_min_max,"%","\n",
+                                                                                                                                                                      "steepness first peak: ",ratio_firstpeak,"%"),
+               size = 3)
+      }}+
+      
+    ggtitle(paste0(names(Q_data_events[[i]])[[y]]))
+    #print(plot_event[[i]][[y]])
+    
+    # setwd("N:/Veröffentlichungen/ICUD_WST/pictures/events")
+    # ggsave(filename=paste0(names(Q_data_events)[i],gsub("-", "", names(Q_data_events[[i]])[[y]]),".png"),bg = 'white',
+    #        plot = (plot_event[[i]][[y]]),
+    #        width=10,
+    #        height=5,
+    # units="cm")
+  }
+  event_char[[i]]=data.frame(do.call("rbind",event_char_station),names(Q_data_events[[i]]))
+  event_char_2[[i]]=data.frame(do.call("cbind",event_char_station))
+  colnames(event_char_2[[i]])=names(Q_data_events[[i]])
+  
+  colnames(event_char[[i]])=c("Qmax [m³/s]","Duration [h]","Event volume [m³]","Baseflow proportion [%]","steepness maximum [%]","steepness first peak [%]","date")
+  rownames(event_char_2[[i]])=c("Qmax [m³/s]","Duration [h]","Event volume [m³]","Baseflow proportion [%]","steepness maximum [%]","steepness first peak [%]")
+  
+  event_char_station=list()
+  rownames(event_char[[i]])=names(Q_data_events[[i]]) ###maybe delete?
+  
+  
+  
+  
+  a=wrap_plots(plot_event[[i]]) + guide_area() + plot_annotation(
+      title = stationname[i],
+      #caption = "300 model runs",
+      theme = theme(
+        plot.title = element_text(hjust = 0.05,face ="bold",size = 18), # 1 would be on right side
+        #plot.caption = element_text(hjust=.7)
+      )
+    ) +plot_layout(guides = "collect",ncol=2,nrow = 4) 
+    
+    print(a)
+    
+    
+    setwd("N:/Veröffentlichungen/ICUD_WST/pictures/events")
+    ggsave(filename=paste0(stationname[i],".png"),bg = 'white',
+           plot = (a),
+           width=21,
+           height=30,
+           units="cm")
+  }
+
+
+  
+
+names(event_char)=stationname
+

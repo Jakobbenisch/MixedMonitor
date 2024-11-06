@@ -1,0 +1,455 @@
+source("N:/Veröffentlichungen/ICUD_WST/scripts/prepare_statistical_analysis.R")
+
+excel_toxicity=toxicity_data
+ufz_data=ufz_data
+monitoring_station="Geb2"
+sampling_condition="BL"
+sampling_condition="EV"
+
+testing_plots=toxicity_comparison(excel_toxicity,ufz_data,monitoring_station,sampling_condition)
+
+toxicity_comparison=function(excel_toxicity,ufz_data,monitoring_station,sampling_condition){
+  ufz_data=ufz_data[!is.na(ufz_data$`compound class level 1`),]
+  header=colnames(ufz_data)
+  selector=header[str_detect(header,as.character(monitoring_station))&str_detect(header,as.character(sampling_condition))]
+  montoring_data=ufz_data[,selector]
+
+  montoring_data=cbind(montoring_data,class=ufz_data$`compound class level 1`,compound=ufz_data$Compound)
+  montoring_data <- montoring_data %>%
+    filter(class != 0)
+  montoring_data[is.na(montoring_data)]<-0
+
+  counts <- montoring_data[, -c(ncol(montoring_data)-1,ncol(montoring_data))]
+  # Count the number of values greater than 0 per column
+  if(NCOL(counts) == 1){
+    count_non_zero=length(counts[counts>0])
+  }else{
+  count_non_zero <- apply(counts, 2, function(x) sum(x > 0))}
+  
+  toxicity=excel_toxicity
+  colnames(toxicity)[3]<-"compound"
+  no_compounds=list()
+  toxicity_units=merge(y=toxicity,x=montoring_data,by=c("compound"))
+  
+  names_tox_classes=c("Fish","Crustacean","Algae")
+  real_names=c("Fish_Toxicity_EC_ng_L","Crustacean_Toxicity_EC_ng_L","Algae_Toxicity_EC_ng_L")
+  
+  tox_classes=list()
+  tox_plot=list()
+  perpare_plot=list()
+  # names_tox_classes=c("Fish","Crustacean","Algae")
+  # real_names=c("Fish_Toxicity_EC_ng_L","Crustacean_Toxicity_EC_ng_L","Algae_Toxicity_EC_ng_L")
+  for(i in 1:3){
+      tox=toxicity_units[selector]/toxicity_units[,real_names[i]]
+    
+    no_tox_final=list()
+    for(event in 1:length(selector)){
+      no_tox=cbind(toxicity_units[,(event+1)], toxicity_units[real_names[i]])
+      no_tox_test=no_tox[no_tox[,1]>0,]
+      no_tox_final[[event]]=na.omit(dim(no_tox_test)[1])}
+    
+    names_need_edit=sub(".*_(\\d+)$", "\\1", selector)
+    formatted_vector=paste0("20", substr(as.character(names_need_edit), 1, 2), "-", 
+                            substr(as.character(names_need_edit), 3, 4), "-", 
+                            substr(as.character(names_need_edit), 5, 6))
+    
+    plot_string=list()
+    for(y in 1:length(selector)){
+      plot_string[[y]]=paste0(formatted_vector[y],": ",no_tox_final[[y]]," / ",count_non_zero[y])}
+    
+    if(length(selector)>=5){
+      # Determine how many lines will go into each column
+      num_lines <- length(plot_string)
+      half_length <- ceiling(num_lines / 2)
+      
+      # Split the list into two parts (for two columns)
+      column1 <- plot_string[1:half_length]
+      column2 <- plot_string[(half_length + 1):num_lines]
+      
+      # Ensure the columns have the same length by filling in blanks if necessary
+      if (length(column2) < length(column1)) {
+        column2 <- c(column2, rep("", length(column1) - length(column2)))
+      }
+      
+      # Combine both columns into one string with formatted spaces and line breaks
+      combined_string <- paste0(column1, "     ", column2, collapse = "\n")
+      
+    }else{
+    combined_string <- paste(plot_string, collapse = "\n")
+    }
+    
+    tox_class=data.frame(tox,class=toxicity_units$class)
+        tox_classes[[i]]=tox_class %>% 
+      group_by(class) %>% 
+      #summarise(c_across(where(is.numeric)),sum,na.rm=T)
+      summarise(across(all_of(selector), sum, na.rm = TRUE))
+    
+    names=c("class",formatted_vector)
+    colnames(tox_classes[[i]])=names
+    print(tox_classes[[i]])
+    
+    perpare_plot[[i]]=melt(tox_classes[[i]],id.vars = "class")
+    
+    tox_plot[[i]]=ggplot(perpare_plot[[i]],aes(y=forcats::fct_rev(variable),x=value,fill=class)) +geom_bar(stat="identity")+theme_light()+
+      ggtitle(names_tox_classes[i])+  
+      theme(
+        text = element_text(size = 6),  # Set base text size (e.g., from 12 to 6)
+        legend.title = element_blank(),
+        legend.key.size = unit(0.5, "cm"),  # Adjust the size of legend symbols
+        plot.subtitle = element_text(size = 6, margin = margin(t = 3, b = 2), face = "italic"),
+        plot.title = element_text(face = "bold"),# Adjust subtitle size
+        axis.title.x = element_text(size = 6),  # X-axis title size
+        axis.title.y = element_text(size = 6),  # Y-axis title size
+        axis.text.x = element_text(size = 6),  # X-axis text size
+        axis.text.y = element_text(size = 6)   # Y-axis text size
+      )+
+    
+      xlab("Sum Toxic Units") + ylab("") +labs(title=names_tox_classes[i], subtitle = combined_string)+ guides(fill = guide_legend(ncol = 2))
+    
+   
+  }
+  
+  tox_plot1 <- tox_plot[[1]] + theme(legend.position = "none")
+  tox_plot2 <- tox_plot[[2]] + theme(legend.position = "none")
+  tox_plot3 <- tox_plot[[3]] + theme(legend.position = "none")
+  
+  legend <- get_legend(tox_plot1 + theme(legend.position = "right"))
+  
+  combined_plot <- wrap_plots(tox_plot1, tox_plot2, tox_plot3, plot_spacer(), ncol = 2) + plot_layout(guides = "collect")# +plot_annotation(title = monitoring_station)
+  
+  # Manually add the legend in the empty space (4th position)
+  final_plot <- combined_plot + inset_element(legend, left = 0.25, right = 0.75, bottom = 0.25, top = 0.75)  }
+
+
+
+names_events=c("Lock2","Lock3","Lock4","Geb2","Geb3")
+
+setwd("N:/Veröffentlichungen/ICUD_WST/pictures/tox")
+
+for(plots_iterator in 1:length(names_events)){
+  
+  testing_plots=toxicity_comparison(excel_toxicity,ufz_data,monitoring_station=names_events[plots_iterator],sampling_condition="EV")
+  
+  ggsave(filename=paste0(names_events[plots_iterator],"_Events.png"),bg = 'white',
+         plot = (testing_plots),
+         width=21,
+         height=10,
+         units="cm")
+}
+
+
+names_events=c("Lock1","Lock2","Lock3","Geb1")
+
+setwd("N:/Veröffentlichungen/ICUD_WST/pictures/tox")
+
+for(i in 1:length(names_events)){
+  
+  testing_plots=toxicity_comparison(excel_toxicity,ufz_data,monitoring_station=names_events[i],sampling_condition="BL")
+  
+  ggsave(filename=paste0(names_events[i],"_BL.png"),bg = 'white',
+         plot = (testing_plots),
+         width=21,
+         height=10,
+         units="cm")
+}
+
+
+
+###comparison
+
+
+excel_toxicity=toxicity_data
+ufz_data=ufz_data
+monitoring_station_bl="Lock3"
+monitoring_station_ev="Lock4"
+sampling_condition="BL"
+sampling_condition="EV"
+
+
+
+toxicity_comparison_bl_ev=function(excel_toxicity,ufz_data,monitoring_station_ev,monitoring_station_bl){
+  ufz_data=ufz_data[!is.na(ufz_data$`compound class level 1`),]
+  header=colnames(ufz_data)
+  
+  selector_bl=header[str_detect(header,as.character(monitoring_station_bl))&str_detect(header,as.character("BL"))]
+  montoring_data=ufz_data[,selector_bl]
+  
+  montoring_data=cbind(montoring_data,class=ufz_data$`compound class level 1`,compound=ufz_data$Compound)
+  montoring_data <- montoring_data %>%
+    filter(class != 0)
+  montoring_data[is.na(montoring_data)]<-0
+  
+  counts <- montoring_data[, -c(ncol(montoring_data)-1,ncol(montoring_data))]
+  # Count the number of values greater than 0 per column
+  if(NCOL(counts) == 1){
+    count_non_zero=length(counts[counts>0])
+  }else{
+    count_non_zero <- apply(counts, 2, function(x) sum(x > 0))}
+  
+  toxicity=excel_toxicity
+  colnames(toxicity)[3]<-"compound"
+  no_compounds=list()
+  toxicity_units=merge(y=toxicity,x=montoring_data,by=c("compound"))
+  
+  names_tox_classes=c("Fish","Crustacean","Algae")
+  real_names=c("Fish_Toxicity_EC_ng_L","Crustacean_Toxicity_EC_ng_L","Algae_Toxicity_EC_ng_L")
+  
+  
+  
+  tox_classes=list()
+  tox_plot=list()
+  perpare_plot=list()
+  mean_bl=list()
+  tox_data=list()
+  
+  # names_tox_classes=c("Fish","Crustacean","Algae")
+  # real_names=c("Fish_Toxicity_EC_ng_L","Crustacean_Toxicity_EC_ng_L","Algae_Toxicity_EC_ng_L")
+  for(i in 1:3){
+    
+
+    
+    tox=toxicity_units[selector_bl]/toxicity_units[,real_names[i]]
+    
+    no_tox_final=list()
+    for(event in 1:length(selector_bl)){
+      no_tox=cbind(toxicity_units[,(event+1)], toxicity_units[real_names[i]])
+      no_tox_test=no_tox[no_tox[,1]>0,]
+      no_tox_final[[event]]=na.omit(dim(no_tox_test)[1])}
+    
+    names_need_edit=sub(".*_(\\d+)$", "\\1", selector_bl)
+    formatted_vector=paste0("20", substr(as.character(names_need_edit), 1, 2), "-", 
+                            substr(as.character(names_need_edit), 3, 4), "-", 
+                            substr(as.character(names_need_edit), 5, 6))
+    
+    plot_string=list()
+    for(y in 1:length(selector_bl)){
+      plot_string[[y]]=paste0(formatted_vector[y],": ",no_tox_final[[y]]," / ",count_non_zero[y])}
+    
+    if(length(selector_bl)>=5){
+      # Determine how many lines will go into each column
+      num_lines <- length(plot_string)
+      half_length <- ceiling(num_lines / 2)
+      
+      # Split the list into two parts (for two columns)
+      column1 <- plot_string[1:half_length]
+      column2 <- plot_string[(half_length + 1):num_lines]
+      
+      # Ensure the columns have the same length by filling in blanks if necessary
+      if (length(column2) < length(column1)) {
+        column2 <- c(column2, rep("", length(column1) - length(column2)))
+      }
+      
+      # Combine both columns into one string with formatted spaces and line breaks
+      combined_string <- paste0(column1, "     ", column2, collapse = "\n")
+      
+    }else{
+      combined_string <- paste(plot_string, collapse = "\n")
+    }
+    
+    tox_class=data.frame(tox,class=toxicity_units$class)
+    tox_classes[[i]]=tox_class %>% 
+      group_by(class) %>% 
+      #summarise(c_across(where(is.numeric)),sum,na.rm=T)
+      summarise(across(all_of(selector_bl), sum, na.rm = TRUE))  
+
+    mean_bl[[i]] = tox_classes[[i]] %>%
+      rowwise() %>%
+      summarise(mean_value = mean(c_across(-1), na.rm = TRUE))
+    
+    ####events
+    
+    selector_ev=header[str_detect(header,as.character(monitoring_station_ev))&str_detect(header,as.character("EV"))]
+    montoring_data=ufz_data[,selector_ev]
+    
+    montoring_data=cbind(montoring_data,class=ufz_data$`compound class level 1`,compound=ufz_data$Compound)
+    montoring_data <- montoring_data %>%
+      filter(class != 0)
+    montoring_data[is.na(montoring_data)]<-0
+    
+    counts <- montoring_data[, -c(ncol(montoring_data)-1,ncol(montoring_data))]
+    # Count the number of values greater than 0 per column
+    if(NCOL(counts) == 1){
+      count_non_zero=length(counts[counts>0])
+    }else{
+      count_non_zero <- apply(counts, 2, function(x) sum(x > 0))}
+    
+    no_compounds_ev=list()
+    toxicity_units_ev=merge(y=toxicity,x=montoring_data,by=c("compound"))
+    
+    tox_classes_ev=list()
+    tox_classes_ev_test=list()
+    # names_tox_classes=c("Fish","Crustacean","Algae")
+    # real_names=c("Fish_Toxicity_EC_ng_L","Crustacean_Toxicity_EC_ng_L","Algae_Toxicity_EC_ng_L")
+    
+    tox=toxicity_units_ev[selector_ev]/toxicity_units_ev[,real_names[i]]
+    
+    no_tox_final=list()
+    for(event in 1:length(selector_ev)){
+      no_tox=cbind(toxicity_units_ev[,(event+1)], toxicity_units_ev[real_names[i]])
+      no_tox_test=no_tox[no_tox[,1]>0,]
+      no_tox_final[[event]]=na.omit(dim(no_tox_test)[1])}
+    
+    names_need_edit=sub(".*_(\\d+)$", "\\1", selector_ev)
+    formatted_vector=paste0("20", substr(as.character(names_need_edit), 1, 2), "-", 
+                            substr(as.character(names_need_edit), 3, 4), "-", 
+                            substr(as.character(names_need_edit), 5, 6))
+    plot_string=list()
+    for(y in 1:length(selector_ev)){
+      plot_string[[y]]=paste0(formatted_vector[y],": ",no_tox_final[[y]]," / ",count_non_zero[y])}
+    
+    if(length(selector_ev)>=5){
+      # Determine how many lines will go into each column
+      num_lines <- length(plot_string)
+      half_length <- ceiling(num_lines / 2)
+      
+      # Split the list into two parts (for two columns)
+      column1 <- plot_string[1:half_length]
+      column2 <- plot_string[(half_length + 1):num_lines]
+      
+      # Ensure the columns have the same length by filling in blanks if necessary
+      if (length(column2) < length(column1)) {
+        column2 <- c(column2, rep("", length(column1) - length(column2)))
+      }
+      
+      # Combine both columns into one string with formatted spaces and line breaks
+      combined_string <- paste0(column1, "     ", column2, collapse = "\n")
+      
+    }else{
+      combined_string <- paste(plot_string, collapse = "\n")
+    }
+    
+    tox_class=data.frame(tox,class=toxicity_units$class)
+    tox_classes_ev[[i]]=tox_class %>% 
+      group_by(class) %>% 
+      #summarise(c_across(where(is.numeric)),sum,na.rm=T)
+      summarise(across(all_of(selector_ev), sum, na.rm = TRUE))  
+    
+    tox_classes_ev_test[[i]] <- tox_classes_ev[[i]] %>%
+      mutate(across(-1, ~ log10(.x / mean_bl[[i]])))
+    
+    # Assuming tox_classes_ev_test[[i]] is your data frame/tibble
+    # Step 1: Extract the mean_value from each date column and convert to a proper format
+    mean_values <- lapply(tox_classes_ev_test[[i]][-1], function(x) x$mean_value)
+    
+    # Step 2: Create a new data frame from the extracted mean values
+    tox_classes_long <- data.frame(
+      class = tox_classes_ev_test[[i]]$class,
+      do.call(cbind, mean_values)
+    )
+    print(tox_classes_long)
+    tox_data[[i]]=tox_classes_long
+    
+    names=c("class",formatted_vector)
+    colnames(tox_classes_long)=names
+
+    perpare_plot[[i]]=melt(tox_classes_long,id.vars = "class")
+    
+
+    tox_plot[[i]] = ggplot(perpare_plot[[i]], aes(y = forcats::fct_rev(variable), x = value, fill = forcats::fct_rev(class))) +
+      geom_bar(stat = "identity", position = position_dodge()) +
+      theme_light() +
+      ggtitle(names_tox_classes[i]) +
+      theme(
+        text = element_text(size = 6),  # Set base text size
+        legend.title = element_blank(),
+        legend.key.size = unit(0.5, "cm"),  # Adjust legend size
+        plot.subtitle = element_text(size = 6, margin = margin(t = 3, b = 2), face = "italic"),
+        plot.title = element_text(face = "bold"),  # Title style
+        axis.title.x = element_text(size = 6),  # X-axis title size
+        axis.title.y = element_text(size = 6),  # Y-axis title size
+        axis.text.x = element_text(size = 6),  # X-axis text size
+        axis.text.y = element_text(size = 6)   # Y-axis text size
+      ) +
+      scale_fill_discrete(guide = guide_legend(reverse = TRUE)) +  # Reverse legend
+      xlab("Quotient between Event and Baseline-toxicity (log-scaled)") +
+      ylab("") +
+      labs(title = names_tox_classes[i]) +
+      guides(fill = guide_legend(ncol = 2,reverse = T))  # Set the number of columns in the legend
+    print(tox_plot[[i]])
+  }
+  
+  tox_plot1 <- tox_plot[[1]] + theme(legend.position = "none")
+  tox_plot2 <- tox_plot[[2]] + theme(legend.position = "none")
+  tox_plot3 <- tox_plot[[3]] + theme(legend.position = "none")
+  
+  legend <- get_legend(tox_plot1 + theme(legend.position = "right"))
+  
+  combined_plot <- wrap_plots(tox_plot1, tox_plot2, tox_plot3, plot_spacer(), ncol = 2) + plot_layout(guides = "collect")# +plot_annotation(title = monitoring_station)
+  
+  # Manually add the legend in the empty space (4th position)
+  final_plot <- combined_plot + inset_element(legend, left = 0.25, right = 0.75, bottom = 0.25, top = 0.75)  
+  return(list(final_plot,tox_data))}
+
+
+setwd("N:/Veröffentlichungen/ICUD_WST/pictures/tox")
+
+testing_lock_3_4=toxicity_comparison_bl_ev(excel_toxicity,ufz_data,monitoring_station_ev="Lock4",monitoring_station_bl="Lock3")
+testing_lock_2_3=toxicity_comparison_bl_ev(excel_toxicity,ufz_data,monitoring_station_ev="Lock3",monitoring_station_bl="Lock2")
+testing_lock_2_4=toxicity_comparison_bl_ev(excel_toxicity,ufz_data,monitoring_station_ev="Lock4",monitoring_station_bl="Lock2")
+
+testing_lock_3_3=toxicity_comparison_bl_ev(excel_toxicity,ufz_data,monitoring_station_ev="Lock3",monitoring_station_bl="Lock3")
+
+
+testing_geb2=toxicity_comparison_bl_ev(excel_toxicity,ufz_data,monitoring_station_ev="Geb2",monitoring_station_bl="Geb1")
+testing_geb3=toxicity_comparison_bl_ev(excel_toxicity,ufz_data,monitoring_station_ev="Geb3",monitoring_station_bl="Geb1")
+
+bilder=list(testing_lock_3_4,testing_lock_2_3,testing_lock_2_4,testing_geb2,testing_geb3,testing_lock_3_3)
+names=c("Lock3_4","Lock2_3","Lock_2_4","Geb2","Geb3","Lock3_3")
+
+for(i in 1:length(bilder)){
+ggsave(filename=paste0(names[i],"_Events_comparison_2.png"),bg = 'white',
+         plot = (bilder[[i]]),
+         width=21,
+         height=10,
+         units="cm")
+}
+
+
+####mean tox
+names_tox_classes=c("Fish","Crustacean","Algae")
+
+mean_tox=list()
+
+for(i in 1:3){
+  data=data.frame(testing_geb2[[2]][[i]][,-1])
+  rownames(data)<-testing_geb2[[2]][[i]][,1]
+  mean_tox[[i]]=mean(apply(data,2,mean))
+  names(mean_tox  [[i]]) <-names_tox_classes[i]
+}
+
+mean_tox=list()
+
+for(i in 1:3){
+  data=data.frame(testing_geb3[[2]][[i]][,-1])
+  rownames(data)<-testing_geb3[[2]][[i]][,1]
+  data[data == Inf | data == -Inf] <- NA
+  mean_tox[[i]]=mean(apply(data,2,mean,na.rm=T))
+  names(mean_tox  [[i]]) <-names_tox_classes[i]
+  
+}
+
+mean_tox_lock3=list()
+
+for(i in 1:3){
+  data=data.frame(testing_lock_3_3[[2]][[i]][,-1])
+  rownames(data)<-testing_lock_3_3[[2]][[i]][,1]
+  data[data == Inf | data == -Inf] <- NA
+  mean_tox_lock3[[i]]=mean(apply(data,2,mean,na.rm=T))
+  names(mean_tox_lock3  [[i]]) <-names_tox_classes[i]
+  
+}
+
+
+mean_tox_lock4=list()
+
+for(i in 1:3){
+  data=data.frame(testing_lock_3_4[[2]][[i]][,-1])
+  rownames(data)<-testing_lock_3_4[[2]][[i]][,1]
+  data[data == Inf | data == -Inf] <- NA
+  mean_tox_lock4[[i]]=mean(apply(data,2,mean,na.rm=T))
+  names(mean_tox_lock4  [[i]]) <-names_tox_classes[i]
+  
+}
+
+
+ 
